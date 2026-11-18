@@ -216,7 +216,7 @@ export default function Admin() {
       {/* 员工管理 */}
       {tab === 'employees' && (
         <div className="card">
-          {employees.map((emp) => (
+          {employees.map((emp, idx) => (
             <div className="list-item" key={emp.id}>
               <div>
                 <div style={{ fontWeight: 500 }}>
@@ -224,7 +224,7 @@ export default function Admin() {
                   <span style={{ fontSize: 11, marginLeft: 6, color: '#999' }}>{emp.employee_no}</span>
                 </div>
                 <div style={{ fontSize: 12, color: '#999' }}>
-                  {emp.department} · 积分 {emp.current_points} · 排名 #{emp.rank_no || '-'}
+                  {emp.department} · 积分 {emp.current_points} · 排名 #{idx + 1}
                 </div>
               </div>
               <button
