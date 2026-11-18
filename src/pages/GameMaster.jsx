@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase, db } from '../lib/supabase'
-import { Html5Qrcode } from 'html5-qrcode'
 
 const GAMES = ['套圈圈', '飞镖', '九宫格投球', '神射手', '趣味闯关']
 const POINTS = [10, 20, 30, 50, 100]
@@ -48,6 +47,7 @@ export default function GameMaster() {
     setScanning(true)
     setMessage('')
     try {
+      const { Html5Qrcode } = await import('html5-qrcode')
       const scanner = new Html5Qrcode(scannerContainerId)
       scannerRef.current = scanner
       await scanner.start(

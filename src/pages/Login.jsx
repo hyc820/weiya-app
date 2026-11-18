@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { db } from '../lib/supabase'
-import { Html5Qrcode } from 'html5-qrcode'
 
 export default function Login() {
   const [employeeNo, setEmployeeNo] = useState('')
@@ -39,6 +38,7 @@ export default function Login() {
     setScanning(true)
     setError('')
     try {
+      const { Html5Qrcode } = await import('html5-qrcode')
       const scanner = new Html5Qrcode(scannerContainerId)
       scannerRef.current = scanner
       await scanner.start(
