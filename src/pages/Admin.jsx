@@ -11,6 +11,8 @@ export default function Admin() {
   const [items, setItems] = useState([])
   const [records, setRecords] = useState([])
   const [recordKeyword, setRecordKeyword] = useState('')
+  const [showItemForm, setShowItemForm] = useState(false)
+  const [form, setForm] = useState({ name: '', base: '100', start: '', end: '' })
   const [message, setMessage] = useState('')
 
   const TYPE_LABEL = {
@@ -80,16 +82,39 @@ export default function Admin() {
     }
   }
 
+  // 转成 datetime-local 需要的本地时间格式
+  const toLocalInput = (d) => {
+    const p = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+
+  const openItemForm = () => {
+    setForm({
+      name: '',
+      base: '100',
+      start: toLocalInput(new Date()),
+      end: toLocalInput(new Date(Date.now() + 2 * 3600000))
+    })
+    setShowItemForm(true)
+  }
+
   const handleCreateItem = async () => {
-    const name = prompt('商品名称：')
-    if (!name) return
-    const base = prompt('起标积分：', '100')
-    const start = prompt('开始时间（YYYY-MM-DD HH:MM）：', new Date().toLocaleString('zh-CN'))
-    const end = prompt('结束时间（YYYY-MM-DD HH:MM）：', new Date(Date.now() + 2 * 3600000).toLocaleString('zh-CN'))
+    const name = form.name.trim()
+    const base = parseInt(form.base)
+
+    if (!name) return showMsg('请输入商品名称')
+    if (isNaN(base) || base < 0) return showMsg('请输入有效的起标积分')
+    if (!form.start || !form.end) return showMsg('请选择开始和结束时间')
+
+    const start = new Date(form.start)
+    const end = new Date(form.end)
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return showMsg('时间格式无效')
+    if (end <= start) return showMsg('结束时间必须晚于开始时间')
 
     try {
-      await db.createAuctionItem(name, parseInt(base), new Date(start).toISOString(), new Date(end).toISOString())
+      await db.createAuctionItem(name, base, start.toISOString(), end.toISOString())
       showMsg('✅ 商品已创建')
+      setShowItemForm(false)
       loadItems()
     } catch (e) {
       showMsg('❌ ' + e.message)
@@ -241,7 +266,53 @@ export default function Admin() {
       {tab === 'items' && (
         <>
           <div style={{ margin: 12 }}>
-            <button className="btn btn-success" onClick={handleCreateItem}>+ 新增商品</button>
+            {!showItemForm && (
+              <button className="btn btn-success" onClick={openItemForm}>+ 新增商品</button>
+            )}
+
+            {showItemForm && (
+              <div className="card" style={{ margin: 0 }}>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>新增竞标商品</div>
+
+                <label style={{ fontSize: 13, color: '#666' }}>商品名称</label>
+                <input
+                  className="input"
+                  placeholder="例如：Nintendo Switch"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+
+                <label style={{ fontSize: 13, color: '#666' }}>起标积分</label>
+                <input
+                  className="input"
+                  type="number"
+                  inputMode="numeric"
+                  value={form.base}
+                  onChange={(e) => setForm({ ...form, base: e.target.value })}
+                />
+
+                <label style={{ fontSize: 13, color: '#666' }}>开始时间</label>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={form.start}
+                  onChange={(e) => setForm({ ...form, start: e.target.value })}
+                />
+
+                <label style={{ fontSize: 13, color: '#666' }}>结束时间</label>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={form.end}
+                  onChange={(e) => setForm({ ...form, end: e.target.value })}
+                />
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-success" onClick={handleCreateItem}>确定创建</button>
+                  <button className="btn btn-outline" onClick={() => setShowItemForm(false)}>取消</button>
+                </div>
+              </div>
+            )}
           </div>
           {items.map((item) => (
             <div className="card" key={item.id}>
@@ -249,7 +320,7 @@ export default function Admin() {
                 <div>
                   <div style={{ fontWeight: 600 }}>{item.item_name}</div>
                   <div style={{ fontSize: 12, color: '#999' }}>
-                    起标 {item.base_points} 分 · {new Date(item.end_time).toLocaleString('zh-CN')}
+                    起标 {item.base_points} 分 · {item.end_time ? new Date(item.end_time).toLocaleString('zh-CN') : '未设置'}
                   </div>
                 </div>
                 <span className={`badge ${item.status === 'active' ? 'badge-active' : item.status === 'settled' ? 'badge-settled' : 'badge-pending'}`}>
