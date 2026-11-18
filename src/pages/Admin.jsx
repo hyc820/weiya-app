@@ -88,15 +88,7 @@ export default function Admin() {
     const end = prompt('结束时间（YYYY-MM-DD HH:MM）：', new Date(Date.now() + 2 * 3600000).toLocaleString('zh-CN'))
 
     try {
-      await supabase.from('auction_items').insert({
-        item_no: 'ITEM' + String(items.length + 1).padStart(3, '0'),
-        item_name: name,
-        base_points: parseInt(base),
-        quantity: 1,
-        start_time: new Date(start).toISOString(),
-        end_time: new Date(end).toISOString(),
-        status: 'active'
-      })
+      await db.createAuctionItem(name, parseInt(base), new Date(start).toISOString(), new Date(end).toISOString())
       showMsg('✅ 商品已创建')
       loadItems()
     } catch (e) {

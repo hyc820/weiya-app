@@ -62,5 +62,17 @@ export const db = {
   refreshRanking: async () => {
     const { error } = await supabase.rpc('refresh_ranking')
     if (error) throw error
+  },
+
+  // 创建竞标商品
+  createAuctionItem: async (name, basePoints, startTime, endTime) => {
+    const { data, error } = await supabase.rpc('create_auction_item', {
+      p_name: name,
+      p_base: basePoints,
+      p_start: startTime,
+      p_end: endTime
+    })
+    if (error) throw error
+    return data
   }
 }

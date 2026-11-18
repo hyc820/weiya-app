@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function MyPoints() {
-  const { employee } = useAuth()
+  const { employee, refreshEmployee } = useAuth()
   const navigate = useNavigate()
   const [history, setHistory] = useState([])
 
@@ -12,6 +12,11 @@ export default function MyPoints() {
 
   useEffect(() => {
     loadHistory()
+    const timer = setInterval(() => {
+      refreshEmployee()
+      loadHistory()
+    }, 30000)
+    return () => clearInterval(timer)
   }, [])
 
   const loadHistory = async () => {

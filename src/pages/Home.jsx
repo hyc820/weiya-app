@@ -11,6 +11,8 @@ export default function Home() {
   useEffect(() => {
     refreshEmployee()
     loadAnnouncements()
+    const timer = setInterval(refreshEmployee, 30000)
+    return () => clearInterval(timer)
   }, [])
 
   const loadAnnouncements = async () => {
