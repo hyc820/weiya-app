@@ -17,6 +17,15 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
+  // 按当前积分实时计算名次（并列同名次）
+  const withRealRank = async (emp) => {
+    const { count } = await supabase
+      .from('employees')
+      .select('id', { count: 'exact', head: true })
+      .gt('current_points', emp.current_points)
+    return { ...emp, rank_no: (count || 0) + 1 }
+  }
+
   // 用工号登录（匹配预导入的员工名单）
   const login = async (employeeNo) => {
     const { data, error } = await supabase
@@ -29,9 +38,10 @@ export function AuthProvider({ children }) {
       throw new Error('工号不存在，请联系管理员')
     }
 
-    localStorage.setItem('weiya_employee', JSON.stringify(data))
-    setEmployee(data)
-    return data
+    const emp = await withRealRank(data)
+    localStorage.setItem('weiya_employee', JSON.stringify(emp))
+    setEmployee(emp)
+    return emp
   }
 
   // 退出登录
@@ -49,8 +59,9 @@ export function AuthProvider({ children }) {
       .eq('id', employee.id)
       .single()
     if (data) {
-      localStorage.setItem('weiya_employee', JSON.stringify(data))
-      setEmployee(data)
+      const emp = await withRealRank(data)
+      localStorage.setItem('weiya_employee', JSON.stringify(emp))
+      setEmployee(emp)
     }
   }
 
