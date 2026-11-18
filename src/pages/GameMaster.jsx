@@ -12,6 +12,7 @@ export default function GameMaster() {
   const [scanInput, setScanInput] = useState('')
   const [target, setTarget] = useState(null)
   const [selectedGame, setSelectedGame] = useState('')
+  const [completedGames, setCompletedGames] = useState([])
   const [message, setMessage] = useState('')
   const [scanning, setScanning] = useState(false)
   const scannerRef = useRef(null)
@@ -27,6 +28,7 @@ export default function GameMaster() {
       .single()
     if (data) {
       setTarget(data)
+      setCompletedGames(await loadCompletedGames(data.id))
       setMessage('')
       setScanInput('')
       stopScanner()
@@ -34,6 +36,15 @@ export default function GameMaster() {
       setMessage('未找到该员工')
       setTarget(null)
     }
+  }
+
+  // 查询该员工已完成的游戏
+  const loadCompletedGames = async (empId) => {
+    const { data } = await supabase
+      .from('game_record')
+      .select('game_name')
+      .eq('employee_id', empId)
+    return (data || []).map(r => r.game_name)
   }
 
   // 手动输入查询
@@ -100,6 +111,8 @@ export default function GameMaster() {
         .eq('id', target.id)
         .single()
       setTarget(data)
+      setCompletedGames(await loadCompletedGames(target.id))
+      setSelectedGame('')
     } catch (e) {
       setMessage('❌ ' + e.message)
     }
@@ -109,6 +122,7 @@ export default function GameMaster() {
     setTarget(null)
     setScanInput('')
     setSelectedGame('')
+    setCompletedGames([])
     setMessage('')
   }
 
@@ -194,23 +208,29 @@ export default function GameMaster() {
           <div className="card">
             <h3 style={{ marginBottom: 12 }}>选择游戏</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {GAMES.map((g) => (
-                <button
-                  key={g}
-                  className="btn"
-                  style={{
-                    flex: '0 0 auto',
-                    padding: '8px 16px',
-                    background: selectedGame === g ? '#FF6B35' : '#f0f0f0',
-                    color: selectedGame === g ? 'white' : '#333',
-                    fontSize: 14,
-                    width: 'auto'
-                  }}
-                  onClick={() => setSelectedGame(g)}
-                >
-                  {g}
-                </button>
-              ))}
+              {GAMES.map((g) => {
+                const done = completedGames.includes(g)
+                return (
+                  <button
+                    key={g}
+                    className="btn"
+                    disabled={done}
+                    style={{
+                      flex: '0 0 auto',
+                      padding: '8px 16px',
+                      background: done ? '#e8e8e8' : selectedGame === g ? '#FF6B35' : '#f0f0f0',
+                      color: done ? '#aaa' : selectedGame === g ? 'white' : '#333',
+                      fontSize: 14,
+                      width: 'auto',
+                      opacity: done ? 0.6 : 1,
+                      cursor: done ? 'not-allowed' : 'pointer'
+                    }}
+                    onClick={() => !done && setSelectedGame(g)}
+                  >
+                    {g}{done ? ' ✓' : ''}
+                  </button>
+                )
+              })}
             </div>
           </div>
 

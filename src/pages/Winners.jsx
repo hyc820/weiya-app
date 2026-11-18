@@ -17,7 +17,8 @@ export default function Winners() {
       .from('auction_winners')
       .select(`
         *,
-        auction_items (item_name)
+        auction_items (item_name),
+        employees (name, department, employee_no)
       `)
       .order('settled_at', { ascending: false })
     setWinners(data || [])
@@ -41,7 +42,15 @@ export default function Winners() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 16 }}>{w.auction_items?.item_name}</div>
-                  <div style={{ color: '#666', fontSize: 13 }}>得标积分：{w.win_points}</div>
+                  <div style={{ fontSize: 14, marginTop: 4 }}>
+                    <span style={{ color: '#FF6B35', fontWeight: 600 }}>
+                      {w.employees?.name || '未知'}
+                    </span>
+                    <span style={{ color: '#999', fontSize: 12, marginLeft: 6 }}>
+                      {w.employees?.department} · {w.employees?.employee_no}
+                    </span>
+                  </div>
+                  <div style={{ color: '#666', fontSize: 13, marginTop: 4 }}>得标积分：{w.win_points}</div>
                 </div>
                 <span className={`badge ${isMe ? 'badge-active' : 'badge-settled'}`}>
                   {isMe ? '🏆 我得标了！' : '已结束'}

@@ -1,17 +1,13 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { db } from '../lib/supabase'
 
 export default function Login() {
   const [employeeNo, setEmployeeNo] = useState('')
-  const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
-  const isWeChat = /MicroMessenger/i.test(navigator.userAgent)
   const { login } = useAuth()
   const navigate = useNavigate()
-  const scannerRef = useRef(null)
-  const scannerContainerId = 'login-qr-reader'
 
   const doLogin = async (empNo) => {
     if (!empNo.trim()) {
@@ -27,45 +23,11 @@ export default function Login() {
           console.log('签到失败:', e.message)
         }
       }
-      stopScanner()
       navigate('/')
     } catch (e) {
       setError(e.message || '登录失败')
     }
   }
-
-  const startScanner = async () => {
-    setScanning(true)
-    setError('')
-    try {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      const scanner = new Html5Qrcode(scannerContainerId)
-      scannerRef.current = scanner
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => { doLogin(decodedText) },
-        () => {}
-      )
-    } catch (err) {
-      setError(isWeChat
-        ? '微信内无法调用相机，请点右上角 ⋯ 选择「在浏览器打开」'
-        : '无法启动相机，请手动输入工号')
-      setScanning(false)
-    }
-  }
-
-  const stopScanner = async () => {
-    if (scannerRef.current) {
-      try { await scannerRef.current.stop() } catch (e) {}
-      scannerRef.current = null
-    }
-    setScanning(false)
-  }
-
-  useEffect(() => {
-    return () => { stopScanner() }
-  }, [])
 
   const handleLogin = (e) => {
     e.preventDefault()
@@ -82,49 +44,22 @@ export default function Login() {
         </div>
 
         <div className="card">
-          {scanning ? (
-            <div>
-              <div id={scannerContainerId} style={{ width: '100%', borderRadius: 12, overflow: 'hidden' }} />
-              <button
-                className="btn btn-outline"
-                style={{ marginTop: 12 }}
-                onClick={stopScanner}
-              >
-                关闭相机
-              </button>
+          <form onSubmit={handleLogin}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', marginBottom: 8, color: '#666', fontSize: 14 }}>请输入您的工号</label>
+              <input
+                className="input"
+                placeholder="例如：EMP001"
+                value={employeeNo}
+                onChange={(e) => setEmployeeNo(e.target.value)}
+                autoCapitalize="characters"
+              />
             </div>
-          ) : (
-            <>
-              <form onSubmit={handleLogin}>
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', marginBottom: 8, color: '#666', fontSize: 14 }}>请输入您的工号</label>
-                  <input
-                    className="input"
-                    placeholder="例如：EMP001"
-                    value={employeeNo}
-                    onChange={(e) => setEmployeeNo(e.target.value)}
-                    autoCapitalize="characters"
-                  />
-                </div>
 
-                {error && <div style={{ color: '#E63946', fontSize: 14, marginBottom: 12 }}>{error}</div>}
+            {error && <div style={{ color: '#E63946', fontSize: 14, marginBottom: 12 }}>{error}</div>}
 
-                <button className="btn btn-primary" type="submit">登 录</button>
-              </form>
-
-              <div style={{ textAlign: 'center', margin: '16px 0', color: '#999', fontSize: 12 }}>— 或 —</div>
-
-              <button className="btn btn-outline" onClick={startScanner}>
-                📷 扫描工号二维码
-              </button>
-
-              {isWeChat && (
-                <div style={{ marginTop: 12, padding: 10, background: '#FFF4E5', borderRadius: 8, fontSize: 12, color: '#A66300', lineHeight: 1.6 }}>
-                  微信内无法调用相机。请点右上角 ⋯ 选择「在浏览器打开」后再扫码；也可直接输入工号登录。
-                </div>
-              )}
-            </>
-          )}
+            <button className="btn btn-primary" type="submit">登 录</button>
+          </form>
 
           <p style={{ textAlign: 'center', color: '#999', fontSize: 12, marginTop: 16 }}>
             工号由管理员提前导入，如有问题请联系管理员

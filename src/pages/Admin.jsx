@@ -9,11 +9,22 @@ export default function Admin() {
   const [tab, setTab] = useState('employees')
   const [employees, setEmployees] = useState([])
   const [items, setItems] = useState([])
+  const [records, setRecords] = useState([])
+  const [recordKeyword, setRecordKeyword] = useState('')
   const [message, setMessage] = useState('')
+
+  const TYPE_LABEL = {
+    checkin: '报到',
+    game: '游戏',
+    auction: '竞标',
+    admin: '管理员调整',
+    refund: '回馈'
+  }
 
   useEffect(() => {
     loadEmployees()
     loadItems()
+    loadRecords()
   }, [])
 
   const showMsg = (msg) => {
@@ -104,6 +115,54 @@ export default function Admin() {
     }
   }
 
+  // ===== 积分记录 =====
+  const loadRecords = async () => {
+    const { data } = await supabase
+      .from('point_history')
+      .select(`
+        *,
+        employees (name, employee_no, department)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(1000)
+    setRecords(data || [])
+  }
+
+  const exportCSV = () => {
+    const rows = [
+      ['工号', '姓名', '部门', '积分变动', '类型', '来源/游戏', '操作人', '备注', '时间'],
+      ...records.map((r) => [
+        r.employees?.employee_no || '',
+        r.employees?.name || '',
+        r.employees?.department || '',
+        r.points,
+        TYPE_LABEL[r.point_type] || r.point_type,
+        r.reference || '',
+        r.operator || '',
+        r.remark || '',
+        new Date(r.created_at).toLocaleString('zh-CN')
+      ])
+    ]
+    const csv = rows
+      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `积分记录_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const kw = recordKeyword.trim().toLowerCase()
+  const filteredRecords = kw
+    ? records.filter((r) =>
+        (r.employees?.name || '').toLowerCase().includes(kw) ||
+        (r.employees?.employee_no || '').toLowerCase().includes(kw)
+      )
+    : records
+
   return (
     <div className="app-container">
       <div className="navbar">
@@ -149,6 +208,17 @@ export default function Admin() {
           }}
           onClick={() => setTab('tools')}
         >工具</button>
+        <button
+          className="btn"
+          style={{
+            flex: 1,
+            padding: '8px',
+            fontSize: 13,
+            background: tab === 'records' ? '#FF6B35' : '#f0f0f0',
+            color: tab === 'records' ? 'white' : '#333'
+          }}
+          onClick={() => { setTab('records'); loadRecords() }}
+        >积分记录</button>
       </div>
 
       {/* 员工管理 */}
@@ -219,6 +289,67 @@ export default function Admin() {
             <p>3. 点击「Import」上传 CSV 文件</p>
           </div>
         </div>
+      )}
+
+      {/* 积分记录 */}
+      {tab === 'records' && (
+        <>
+          <div style={{ padding: '12px 12px 0', display: 'flex', gap: 8 }}>
+            <input
+              className="input"
+              placeholder="搜索姓名或工号"
+              value={recordKeyword}
+              onChange={(e) => setRecordKeyword(e.target.value)}
+              style={{ marginBottom: 0, flex: 1 }}
+            />
+            <button
+              className="btn btn-success"
+              style={{ width: 'auto', padding: '0 16px' }}
+              onClick={exportCSV}
+            >导出 CSV</button>
+          </div>
+
+          <div style={{ padding: '8px 12px', fontSize: 12, color: '#999' }}>
+            共 {filteredRecords.length} 条记录（最多显示最近 1000 条）
+          </div>
+
+          <div className="card">
+            {filteredRecords.map((r) => (
+              <div className="list-item" key={r.id}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, fontSize: 14 }}>
+                    {r.employees?.name || '未知'}
+                    <span style={{ fontSize: 11, marginLeft: 6, color: '#999' }}>
+                      {r.employees?.employee_no}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: r.points >= 0 ? '#2A9D8F' : '#E63946'
+                      }}
+                    >
+                      {r.points >= 0 ? '+' : ''}{r.points}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                    {TYPE_LABEL[r.point_type] || r.point_type}
+                    {r.reference ? ` · ${r.reference}` : ''}
+                    {r.operator ? ` · 操作人 ${r.operator}` : ''}
+                    {r.remark ? ` · ${r.remark}` : ''}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#bbb', marginTop: 2 }}>
+                    {new Date(r.created_at).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {filteredRecords.length === 0 && (
+              <p style={{ textAlign: 'center', color: '#999', padding: 20 }}>暂无记录</p>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
