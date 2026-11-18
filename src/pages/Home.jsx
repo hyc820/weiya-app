@@ -59,6 +59,13 @@ export default function Home() {
         </div>
       </div>
 
+      {/* 个人二维码入口 */}
+      <div style={{ margin: '0 12px 12px' }}>
+        <button className="btn btn-primary" onClick={() => navigate('/my-qr')}>
+          🔳 我的二维码（出示给关主加分）
+        </button>
+      </div>
+
       {/* 功能按钮 */}
       <div className="btn-grid">
         <button className="btn btn-secondary" onClick={() => navigate('/points')}>💰 我的积分</button>

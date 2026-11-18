@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import Home from './pages/Home'
 import MyPoints from './pages/MyPoints'
+import MyQR from './pages/MyQR'
 import Ranking from './pages/Ranking'
 import Game from './pages/Game'
 import GameMaster from './pages/GameMaster'
@@ -30,15 +31,25 @@ function AdminRoute({ children }) {
   return children
 }
 
+// 关主路由守卫：仅关主与管理员可加分
+function GameMasterRoute({ children }) {
+  const { employee, loading } = useAuth()
+  if (loading) return <div className="loading">加载中...</div>
+  if (!employee) return <Navigate to="/login" />
+  if (employee.role !== 'gamemaster' && employee.role !== 'admin') return <Navigate to="/" />
+  return children
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
       <Route path="/points" element={<ProtectedRoute><MyPoints /></ProtectedRoute>} />
+      <Route path="/my-qr" element={<ProtectedRoute><MyQR /></ProtectedRoute>} />
       <Route path="/ranking" element={<ProtectedRoute><Ranking /></ProtectedRoute>} />
       <Route path="/game" element={<ProtectedRoute><Game /></ProtectedRoute>} />
-      <Route path="/game-master" element={<ProtectedRoute><GameMaster /></ProtectedRoute>} />
+      <Route path="/game-master" element={<GameMasterRoute><GameMaster /></GameMasterRoute>} />
       <Route path="/auction" element={<ProtectedRoute><Auction /></ProtectedRoute>} />
       <Route path="/bid/:itemId" element={<ProtectedRoute><Bid /></ProtectedRoute>} />
       <Route path="/my-bids" element={<ProtectedRoute><MyBids /></ProtectedRoute>} />
