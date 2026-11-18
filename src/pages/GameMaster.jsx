@@ -17,6 +17,7 @@ export default function GameMaster() {
   const [scanning, setScanning] = useState(false)
   const scannerRef = useRef(null)
   const scannerContainerId = 'qr-reader'
+  const isWeChat = /MicroMessenger/i.test(navigator.userAgent)
 
   // 查找员工
   const findEmployee = async (empNo) => {
@@ -62,7 +63,9 @@ export default function GameMaster() {
         () => {}
       )
     } catch (err) {
-      setMessage('❌ 无法启动相机，请检查权限或手动输入工号')
+      setMessage(isWeChat
+        ? '❌ 微信内无法调用相机，请点右上角 ⋯ 选择「在浏览器打开」，或手动输入工号'
+        : '❌ 无法启动相机，请检查权限或手动输入工号')
       setScanning(false)
     }
   }
@@ -128,6 +131,13 @@ export default function GameMaster() {
               <button className="btn btn-primary" onClick={startScanner}>
                 📷 打开相机扫码
               </button>
+
+              {isWeChat && (
+                <div style={{ marginTop: 12, padding: 10, background: '#FFF4E5', borderRadius: 8, fontSize: 12, color: '#A66300', lineHeight: 1.6 }}>
+                  微信内无法调用相机。请点右上角 ⋯ 选择「在浏览器打开」后再扫码；也可直接输入工号。
+                </div>
+              )}
+
               <div style={{ textAlign: 'center', margin: '16px 0', color: '#999' }}>— 或手动输入 —</div>
               <input
                 className="input"

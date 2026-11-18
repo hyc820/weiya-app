@@ -8,6 +8,7 @@ export default function Login() {
   const [employeeNo, setEmployeeNo] = useState('')
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
+  const isWeChat = /MicroMessenger/i.test(navigator.userAgent)
   const { login } = useAuth()
   const navigate = useNavigate()
   const scannerRef = useRef(null)
@@ -47,7 +48,9 @@ export default function Login() {
         () => {}
       )
     } catch (err) {
-      setError('无法启动相机，请手动输入工号')
+      setError(isWeChat
+        ? '微信内无法调用相机，请点右上角 ⋯ 选择「在浏览器打开」'
+        : '无法启动相机，请手动输入工号')
       setScanning(false)
     }
   }
@@ -114,6 +117,12 @@ export default function Login() {
               <button className="btn btn-outline" onClick={startScanner}>
                 📷 扫描工号二维码
               </button>
+
+              {isWeChat && (
+                <div style={{ marginTop: 12, padding: 10, background: '#FFF4E5', borderRadius: 8, fontSize: 12, color: '#A66300', lineHeight: 1.6 }}>
+                  微信内无法调用相机。请点右上角 ⋯ 选择「在浏览器打开」后再扫码；也可直接输入工号登录。
+                </div>
+              )}
             </>
           )}
 
