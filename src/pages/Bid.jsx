@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase, db } from '../lib/supabase'
+import { adminItemLabel } from '../lib/itemName'
 
 const fmtTime = (t) =>
   t ? new Date(t).toLocaleString('zh-CN', { hour12: false }) : ''
@@ -35,7 +36,7 @@ export default function Bid() {
 
   const loadItem = async () => {
     const { data } = await supabase
-      .from('auction_items')
+      .from(isAdmin ? 'auction_items' : 'auction_items_public')
       .select('*')
       .eq('id', itemId)
       .single()
@@ -113,7 +114,7 @@ export default function Bid() {
 
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ fontSize: 20 }}>{item.item_name}</h2>
+          <h2 style={{ fontSize: 20 }}>{isAdmin ? adminItemLabel(item) : item.item_name}</h2>
           <span className={`badge ${item.status === 'active' ? 'badge-active' : item.status === 'settled' ? 'badge-settled' : 'badge-pending'}`}>
             {item.status === 'active' ? '🔥 进行中' : item.status === 'settled' ? '已结标' : '未开始'}
           </span>

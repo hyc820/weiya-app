@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase, db } from '../lib/supabase'
+import { adminItemLabel } from '../lib/itemName'
 
 export default function Admin() {
   const { employee } = useAuth()
@@ -13,7 +14,7 @@ export default function Admin() {
   const [gameRecords, setGameRecords] = useState([])
   const [recordKeyword, setRecordKeyword] = useState('')
   const [showItemForm, setShowItemForm] = useState(false)
-  const [form, setForm] = useState({ name: '', base: '100', start: '', end: '' })
+  const [form, setForm] = useState({ name: '', base: '100', start: '', end: '', isBlind: false })
   const [message, setMessage] = useState('')
 
   const TYPE_LABEL = {
@@ -139,7 +140,8 @@ export default function Admin() {
       name: '',
       base: '100',
       start: toLocalInput(new Date()),
-      end: toLocalInput(new Date(Date.now() + 2 * 3600000))
+      end: toLocalInput(new Date(Date.now() + 2 * 3600000)),
+      isBlind: false
     })
     setShowItemForm(true)
   }
@@ -158,7 +160,7 @@ export default function Admin() {
     if (end <= start) return showMsg('结束时间必须晚于开始时间')
 
     try {
-      await db.createAuctionItem(name, base, start.toISOString(), end.toISOString())
+      await db.createAuctionItem(name, base, start.toISOString(), end.toISOString(), form.isBlind)
       showMsg('✅ 商品已创建')
       setShowItemForm(false)
       loadItems()
@@ -318,6 +320,37 @@ export default function Admin() {
                   onChange={(e) => setForm({ ...form, base: e.target.value })}
                 />
 
+                <label style={{ fontSize: 13, color: '#666' }}>竞拍类型</label>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      flex: 1,
+                      padding: 10,
+                      fontSize: 13,
+                      background: form.isBlind ? '#f0f0f0' : '#FF6B35',
+                      color: form.isBlind ? '#333' : 'white'
+                    }}
+                    onClick={() => setForm({ ...form, isBlind: false })}
+                  >公开竞拍</button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      flex: 1,
+                      padding: 10,
+                      fontSize: 13,
+                      background: form.isBlind ? '#FF6B35' : '#f0f0f0',
+                      color: form.isBlind ? 'white' : '#333'
+                    }}
+                    onClick={() => setForm({ ...form, isBlind: true })}
+                  >盲盒竞拍</button>
+                </div>
+                <p style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
+                  盲盒结标前对外只显示「盲盒N」，并隐藏图片与描述；结标后显示「盲盒N-真实名称」。
+                </p>
+
                 <label style={{ fontSize: 13, color: '#666' }}>开始时间</label>
                 <input
                   className="input"
@@ -345,7 +378,7 @@ export default function Admin() {
             <div className="card" key={item.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{item.item_name}</div>
+                  <div style={{ fontWeight: 600 }}>{adminItemLabel(item)}</div>
                   <div style={{ fontSize: 12, color: '#999' }}>
                     起标 {item.base_points} 分 · {item.end_time ? new Date(item.end_time).toLocaleString('zh-CN') : '未设置'}
                   </div>

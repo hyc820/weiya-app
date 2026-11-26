@@ -84,13 +84,14 @@ export const db = {
     if (error) throw error
   },
 
-  // 创建竞标商品
-  createAuctionItem: async (name, basePoints, startTime, endTime) => {
+  // 创建竞标商品（isBlind 为 true 时自动分配盲盒编号）
+  createAuctionItem: async (name, basePoints, startTime, endTime, isBlind = false) => {
     const { data, error } = await supabase.rpc('create_auction_item', {
       p_name: name,
       p_base: basePoints,
       p_start: startTime,
-      p_end: endTime
+      p_end: endTime,
+      p_is_blind: isBlind
     })
     if (error) throw error
     return data

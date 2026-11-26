@@ -2,27 +2,42 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { adminItemLabel } from '../lib/itemName'
 
 export default function MyBids() {
   const { employee } = useAuth()
   const navigate = useNavigate()
   const [bids, setBids] = useState([])
+  const isAdmin = employee?.role === 'admin'
 
   useEffect(() => {
     loadBids()
   }, [])
 
   const loadBids = async () => {
-    const { data } = await supabase
+    const { data: bidRows } = await supabase
       .from('auction_bids')
-      .select(`
-        *,
-        auction_items (item_name)
-      `)
+      .select('*')
       .eq('employee_id', employee.id)
       .order('created_at', { ascending: false })
-    setBids(data || [])
+
+    const list = bidRows || []
+    const ids = [...new Set(list.map((b) => b.item_id))]
+    const itemMap = {}
+
+    if (ids.length > 0) {
+      const { data: items } = await supabase
+        .from(isAdmin ? 'auction_items' : 'auction_items_public')
+        .select('*')
+        .in('id', ids)
+      ;(items || []).forEach((it) => { itemMap[it.id] = it })
+    }
+
+    setBids(list.map((b) => ({ ...b, item: itemMap[b.item_id] })))
   }
+
+  const itemLabel = (item) =>
+    isAdmin ? adminItemLabel(item) : item?.item_name || '未知商品'
 
   return (
     <div className="app-container">
@@ -46,7 +61,7 @@ export default function MyBids() {
           <div className="card" key={b.id}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontWeight: 600 }}>{b.auction_items?.item_name}</div>
+                <div style={{ fontWeight: 600 }}>{itemLabel(b.item)}</div>
                 <div style={{ fontSize: 12, color: '#999' }}>
                   {new Date(b.created_at).toLocaleString('zh-CN')}
                 </div>

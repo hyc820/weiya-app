@@ -66,8 +66,17 @@ CREATE TABLE public.auction_items (
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',   -- pending / active / settled / cancelled
+    is_blind BOOLEAN NOT NULL DEFAULT false,  -- 是否盲盒竞拍
+    blind_no INTEGER,                         -- 盲盒编号（全局递增，不复用）
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX idx_auction_items_blind_no
+    ON public.auction_items(blind_no)
+    WHERE blind_no IS NOT NULL;
+
+CREATE SEQUENCE IF NOT EXISTS public.auction_blind_no_seq START WITH 1;
+CREATE SEQUENCE IF NOT EXISTS public.auction_item_no_seq START WITH 1;
 
 -- ============================================
 -- 5. auction_bids - 出价记录表
@@ -147,6 +156,32 @@ SELECT
     rank_no,
     has_checked_in
 FROM public.employees;
+
+-- ============================================
+-- 视图：竞拍商品对外显示（盲盒未结标隐藏真实名称/图片/描述）
+-- ============================================
+CREATE OR REPLACE VIEW public.auction_items_public AS
+SELECT
+    id,
+    item_no,
+    CASE
+        WHEN is_blind AND status <> 'settled' THEN '盲盒' || blind_no
+        WHEN is_blind THEN '盲盒' || blind_no || '-' || item_name
+        ELSE item_name
+    END AS item_name,
+    CASE WHEN is_blind AND status <> 'settled' THEN NULL ELSE image_url END AS image_url,
+    CASE WHEN is_blind AND status <> 'settled' THEN NULL ELSE description END AS description,
+    base_points,
+    quantity,
+    start_time,
+    end_time,
+    status,
+    created_at,
+    is_blind,
+    blind_no
+FROM public.auction_items;
+
+GRANT SELECT ON public.auction_items_public TO anon, authenticated;
 
 -- ============================================
 -- 函数：签到加积分（事务，原子操作）
@@ -563,6 +598,51 @@ BEGIN
     DELETE FROM public.auction_items WHERE id = p_item_id;
 
     RETURN '已删除「' || v_name || '」（清理出价 ' || v_bid_count || ' 条）';
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- 函数：创建竞拍商品（支持盲盒）
+-- ============================================
+CREATE OR REPLACE FUNCTION public.create_auction_item(
+    p_name TEXT,
+    p_base INTEGER,
+    p_start TIMESTAMPTZ,
+    p_end TIMESTAMPTZ,
+    p_is_blind BOOLEAN DEFAULT false
+)
+RETURNS UUID AS $$
+DECLARE
+    v_id UUID;
+    v_blind_no INTEGER;
+BEGIN
+    IF p_name IS NULL OR length(trim(p_name)) = 0 THEN
+        RAISE EXCEPTION '商品名称不能为空';
+    END IF;
+    IF p_base IS NULL OR p_base < 0 THEN
+        RAISE EXCEPTION '起标积分无效';
+    END IF;
+
+    IF COALESCE(p_is_blind, false) THEN
+        v_blind_no := nextval('public.auction_blind_no_seq');
+    END IF;
+
+    INSERT INTO public.auction_items(
+        item_no, item_name, base_points, quantity, start_time, end_time, status, is_blind, blind_no
+    ) VALUES (
+        'ITEM' || to_char(now(), 'YYMMDDHH24MISS') ||
+            lpad(nextval('public.auction_item_no_seq')::text, 3, '0'),
+        trim(p_name),
+        p_base,
+        1,
+        p_start,
+        p_end,
+        'active',
+        COALESCE(p_is_blind, false),
+        v_blind_no
+    ) RETURNING id INTO v_id;
+
+    RETURN v_id;
 END;
 $$ LANGUAGE plpgsql;
 

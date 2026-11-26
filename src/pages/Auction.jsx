@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { adminItemLabel } from '../lib/itemName'
 
 export default function Auction() {
   const navigate = useNavigate()
@@ -14,9 +15,8 @@ export default function Auction() {
   }, [])
 
   const loadItems = async () => {
-    const now = new Date().toISOString()
     const { data } = await supabase
-      .from('auction_items')
+      .from(isAdmin ? 'auction_items' : 'auction_items_public')
       .select('*')
       .order('start_time', { ascending: true })
     setItems(data || [])
@@ -47,7 +47,7 @@ export default function Auction() {
           onClick={() => navigate(`/bid/${item.id}`)}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ fontSize: 17 }}>{item.item_name}</h3>
+            <h3 style={{ fontSize: 17 }}>{isAdmin ? adminItemLabel(item) : item.item_name}</h3>
             {getStatusBadge(item.status)}
           </div>
           {item.image_url && (

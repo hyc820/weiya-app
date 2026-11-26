@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { settledItemLabel } from '../lib/itemName'
 
 export default function Winners() {
   const { employee } = useAuth()
@@ -17,7 +18,7 @@ export default function Winners() {
       .from('auction_winners')
       .select(`
         *,
-        auction_items (item_name),
+        auction_items (item_name, is_blind, blind_no),
         employees (name, department, employee_no)
       `)
       .order('settled_at', { ascending: false })
@@ -41,7 +42,7 @@ export default function Winners() {
             <div className="card" key={w.id} style={{ background: isMe ? '#E8F5E9' : 'white' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 16 }}>{w.auction_items?.item_name}</div>
+                  <div style={{ fontWeight: 600, fontSize: 16 }}>{settledItemLabel(w.auction_items)}</div>
                   <div style={{ fontSize: 14, marginTop: 4 }}>
                     <span style={{ color: '#FF6B35', fontWeight: 600 }}>
                       {w.employees?.name || '未知'}
