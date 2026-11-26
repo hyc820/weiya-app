@@ -12,6 +12,15 @@ export default function Admin() {
   const [items, setItems] = useState([])
   const [records, setRecords] = useState([])
   const [gameRecords, setGameRecords] = useState([])
+  const [announcements, setAnnouncements] = useState([])
+  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
+  const [announcementForm, setAnnouncementForm] = useState({
+    id: null,
+    title: '',
+    content: '',
+    sort: '0',
+    active: true
+  })
   const [recordKeyword, setRecordKeyword] = useState('')
   const [showItemForm, setShowItemForm] = useState(false)
   const [form, setForm] = useState({ name: '', base: '100', start: '', end: '', isBlind: false })
@@ -85,6 +94,64 @@ export default function Admin() {
       showMsg('✅ ' + msg)
       loadGameRecords()
       loadEmployees()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    }
+  }
+
+  // ===== 活动公告 =====
+  const loadAnnouncements = async () => {
+    const { data } = await supabase
+      .from('announcements')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+    setAnnouncements(data || [])
+  }
+
+  const openAnnouncementForm = (a = null) => {
+    setAnnouncementForm(
+      a
+        ? {
+            id: a.id,
+            title: a.title,
+            content: a.content,
+            sort: String(a.sort_order),
+            active: a.is_active
+          }
+        : { id: null, title: '', content: '', sort: '0', active: true }
+    )
+    setShowAnnouncementForm(true)
+  }
+
+  const handleSaveAnnouncement = async () => {
+    if (!announcementForm.title.trim() || !announcementForm.content.trim()) {
+      showMsg('❌ 标题和内容不能为空')
+      return
+    }
+    try {
+      await db.saveAnnouncement({
+        id: announcementForm.id,
+        title: announcementForm.title,
+        content: announcementForm.content,
+        sortOrder: Number(announcementForm.sort) || 0,
+        isActive: announcementForm.active,
+        operatorId: employee.id
+      })
+      showMsg('✅ 公告已保存')
+      setShowAnnouncementForm(false)
+      loadAnnouncements()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    }
+  }
+
+  const handleDeleteAnnouncement = async (a) => {
+    if (!confirm(`确认删除公告「${a.title}」？删除后不可恢复。`)) return
+    try {
+      const msg = await db.deleteAnnouncement(a.id, employee.id)
+      showMsg('✅ ' + msg)
+      loadAnnouncements()
     } catch (e) {
       showMsg('❌ ' + e.message)
     }
@@ -245,6 +312,7 @@ export default function Admin() {
           { key: 'employees', label: '员工管理' },
           { key: 'items', label: '商品管理' },
           { key: 'games', label: '游戏记录' },
+          { key: 'announcements', label: '活动公告' },
           { key: 'tools', label: '工具' },
           { key: 'records', label: '积分记录' }
         ].map((t) => (
@@ -263,6 +331,7 @@ export default function Admin() {
               setTab(t.key)
               if (t.key === 'records') loadRecords()
               if (t.key === 'games') loadGameRecords()
+              if (t.key === 'announcements') loadAnnouncements()
             }}
           >{t.label}</button>
         ))}
@@ -442,6 +511,109 @@ export default function Admin() {
             ))}
             {gameRecords.length === 0 && (
               <p style={{ textAlign: 'center', color: '#999', padding: 20 }}>暂无游戏加分记录</p>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* 活动公告 */}
+      {tab === 'announcements' && (
+        <>
+          <div style={{ padding: '12px 12px 0' }}>
+            <button
+              className="btn btn-primary"
+              style={{ padding: '10px', fontSize: 14 }}
+              onClick={() => openAnnouncementForm()}
+            >+ 新增公告</button>
+          </div>
+
+          {showAnnouncementForm && (
+            <div className="card">
+              <h3 style={{ marginBottom: 12 }}>
+                {announcementForm.id ? '编辑公告' : '新增公告'}
+              </h3>
+
+              <label style={{ fontSize: 13, color: '#666' }}>标题</label>
+              <input
+                className="input"
+                value={announcementForm.title}
+                placeholder="例如：活动流程"
+                onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+              />
+
+              <label style={{ fontSize: 13, color: '#666' }}>内容</label>
+              <textarea
+                className="input"
+                rows={5}
+                style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
+                value={announcementForm.content}
+                placeholder="支持换行，例如：18:00 签到 → 18:30 闯关游戏"
+                onChange={(e) => setAnnouncementForm({ ...announcementForm, content: e.target.value })}
+              />
+
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: 13, color: '#666' }}>排序（越小越靠前）</label>
+                  <input
+                    className="input"
+                    type="number"
+                    inputMode="numeric"
+                    value={announcementForm.sort}
+                    onChange={(e) => setAnnouncementForm({ ...announcementForm, sort: e.target.value })}
+                  />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={announcementForm.active}
+                    onChange={(e) => setAnnouncementForm({ ...announcementForm, active: e.target.checked })}
+                  />
+                  显示中
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSaveAnnouncement}>
+                  保存
+                </button>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowAnnouncementForm(false)}>
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            {announcements.map((a) => (
+              <div className="list-item" key={a.id}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {a.title}
+                    {!a.is_active && (
+                      <span className="badge badge-settled" style={{ marginLeft: 6 }}>已隐藏</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.5 }}>
+                    {a.content}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>排序 {a.sort_order}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <button
+                    className="btn btn-outline"
+                    style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
+                    onClick={() => openAnnouncementForm(a)}
+                  >编辑</button>
+                  <button
+                    className="btn btn-outline"
+                    style={{ width: 'auto', padding: '6px 10px', fontSize: 12, color: '#E63946', borderColor: '#E63946' }}
+                    onClick={() => handleDeleteAnnouncement(a)}
+                  >删除</button>
+                </div>
+              </div>
+            ))}
+            {announcements.length === 0 && (
+              <p style={{ textAlign: 'center', color: '#999', padding: 20 }}>暂无公告</p>
             )}
           </div>
         </>

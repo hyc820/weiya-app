@@ -124,5 +124,29 @@ export const db = {
     })
     if (error) throw error
     return (data && data[0]) || null
+  },
+
+  // 保存活动公告（id 为空表示新增）
+  saveAnnouncement: async ({ id, title, content, sortOrder, isActive, operatorId }) => {
+    const { data, error } = await supabase.rpc('save_announcement', {
+      p_id: id || null,
+      p_title: title,
+      p_content: content,
+      p_sort: sortOrder,
+      p_active: isActive,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 删除活动公告
+  deleteAnnouncement: async (id, operatorId) => {
+    const { data, error } = await supabase.rpc('delete_announcement', {
+      p_id: id,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
   }
 }
