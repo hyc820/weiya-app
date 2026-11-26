@@ -334,6 +334,11 @@ export default function Admin() {
                   onClick={() => handleSettle(item.id, item.item_name)}
                 >立即结标</button>
               )}
+              <button
+                className="btn btn-outline"
+                style={{ marginTop: 8 }}
+                onClick={() => navigate(`/bid/${item.id}`)}
+              >查看出价详情</button>
             </div>
           ))}
         </>

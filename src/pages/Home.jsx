@@ -42,11 +42,13 @@ export default function Home() {
             <div style={{ fontSize: 20, fontWeight: 600 }}>{employee?.name}</div>
             <div style={{ fontSize: 13, opacity: 0.9 }}>{employee?.department} · {employee?.employee_no}</div>
           </div>
-          <div style={{ marginLeft: 'auto' }}>
-            <span className={`badge badge-${employee?.role}`}>
-              {isAdmin ? '管理员' : isGameMaster ? '关主' : '员工'}
-            </span>
-          </div>
+          {isGameMaster && (
+            <div style={{ marginLeft: 'auto' }}>
+              <span className={`badge badge-${employee?.role}`}>
+                {isAdmin ? '管理员' : '关主'}
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>

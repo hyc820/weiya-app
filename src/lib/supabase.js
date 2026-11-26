@@ -46,6 +46,16 @@ export const db = {
     return data
   },
 
+  // 出价详情（结标后所有人可看，管理员竞拍期间即可看）
+  getAuctionBidDetail: async (itemId, viewerId) => {
+    const { data, error } = await supabase.rpc('get_auction_bid_detail', {
+      p_item_id: itemId,
+      p_viewer_id: viewerId
+    })
+    if (error) throw error
+    return data
+  },
+
   // 管理员调整积分
   adjustPoints: async (employeeId, points, operator, remark) => {
     const { data, error } = await supabase.rpc('adjust_points', {

@@ -85,6 +85,18 @@ CREATE INDEX idx_bids_item ON public.auction_bids(item_id);
 CREATE INDEX idx_bids_employee ON public.auction_bids(employee_id);
 
 -- ============================================
+-- 5-1. auction_bid_logs - 出价流水表（每次出价留痕）
+-- ============================================
+CREATE TABLE public.auction_bid_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    item_id UUID NOT NULL REFERENCES public.auction_items(id) ON DELETE CASCADE,
+    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+    bid_points INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_bid_logs_item_time ON public.auction_bid_logs(item_id, created_at DESC);
+
+-- ============================================
 -- 6. auction_winners - 得标结果表
 -- ============================================
 CREATE TABLE public.auction_winners (
@@ -218,7 +230,7 @@ DECLARE
     v_locked INTEGER;
     v_base INTEGER;
     v_status TEXT;
-    v_old_bid INTEGER := 0;
+    v_old_bid INTEGER;
     v_total_locked INTEGER;
 BEGIN
     -- 检查商品状态
@@ -246,6 +258,11 @@ BEGIN
     FROM public.auction_bids
     WHERE item_id = itm_id AND employee_id = emp_id AND status = 'active';
 
+    -- 修改出价只能往上加
+    IF v_old_bid IS NOT NULL AND bid_pts <= v_old_bid THEN
+        RAISE EXCEPTION '出价只能上调：当前出价 % 分，新出价须高于此金额', v_old_bid;
+    END IF;
+
     -- 计算新的冻结总额 = 原冻结 - 旧出价 + 新出价
     v_total_locked := v_locked - COALESCE(v_old_bid, 0) + bid_pts;
 
@@ -264,6 +281,10 @@ BEGIN
         VALUES (itm_id, emp_id, bid_pts);
     END IF;
 
+    -- 记录本次出价流水（用于出价总次数与明细）
+    INSERT INTO public.auction_bid_logs(item_id, employee_id, bid_points)
+    VALUES (itm_id, emp_id, bid_pts);
+
     -- 更新员工冻结积分
     UPDATE public.employees
     SET locked_points = v_total_locked
@@ -273,6 +294,89 @@ BEGIN
     RETURN QUERY
     SELECT current_points, locked_points, (current_points - locked_points)
     FROM public.employees WHERE id = emp_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- 函数：出价详情（结标后所有人可看；管理员竞拍期间即可看）
+-- ============================================
+CREATE OR REPLACE FUNCTION public.get_auction_bid_detail(
+    p_item_id UUID,
+    p_viewer_id UUID
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_status TEXT;
+    v_role TEXT;
+BEGIN
+    SELECT status INTO v_status FROM public.auction_items WHERE id = p_item_id;
+    IF v_status IS NULL THEN
+        RAISE EXCEPTION '商品不存在';
+    END IF;
+
+    SELECT role INTO v_role FROM public.employees WHERE id = p_viewer_id;
+    IF v_status <> 'settled' AND COALESCE(v_role, '') <> 'admin' THEN
+        RAISE EXCEPTION '结标后才能查看出价详情';
+    END IF;
+
+    RETURN jsonb_build_object(
+        'item_id', p_item_id,
+        'status', v_status,
+        'bidder_count', (
+            SELECT COUNT(DISTINCT b.employee_id)
+            FROM public.auction_bids b WHERE b.item_id = p_item_id
+        ),
+        'bid_count', (
+            SELECT COUNT(*)
+            FROM public.auction_bid_logs l WHERE l.item_id = p_item_id
+        ),
+        'highest_bid', (
+            SELECT MAX(b.bid_points)
+            FROM public.auction_bids b WHERE b.item_id = p_item_id
+        ),
+        'highest_bidders', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'employee_no', e.employee_no,
+                'name', e.name,
+                'department', e.department,
+                'bid_points', b.bid_points,
+                'created_at', b.created_at
+            ) ORDER BY b.created_at ASC)
+            FROM public.auction_bids b
+            JOIN public.employees e ON e.id = b.employee_id
+            WHERE b.item_id = p_item_id
+              AND b.bid_points = (
+                  SELECT MAX(x.bid_points)
+                  FROM public.auction_bids x WHERE x.item_id = p_item_id
+              )
+        ), '[]'::jsonb),
+        'winner', (
+            SELECT jsonb_build_object(
+                'employee_no', e.employee_no,
+                'name', e.name,
+                'department', e.department,
+                'win_points', w.win_points,
+                'settled_at', w.settled_at
+            )
+            FROM public.auction_winners w
+            JOIN public.employees e ON e.id = w.employee_id
+            WHERE w.item_id = p_item_id
+            ORDER BY w.settled_at DESC
+            LIMIT 1
+        ),
+        'bids', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'employee_no', e.employee_no,
+                'name', e.name,
+                'department', e.department,
+                'bid_points', l.bid_points,
+                'created_at', l.created_at
+            ) ORDER BY l.created_at DESC, l.bid_points DESC)
+            FROM public.auction_bid_logs l
+            JOIN public.employees e ON e.id = l.employee_id
+            WHERE l.item_id = p_item_id
+        ), '[]'::jsonb)
+    );
 END;
 $$ LANGUAGE plpgsql;
 
@@ -397,6 +501,7 @@ ALTER TABLE public.point_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.game_record ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auction_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auction_bids ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.auction_bid_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auction_winners ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_logs ENABLE ROW LEVEL SECURITY;

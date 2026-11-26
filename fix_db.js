@@ -2,7 +2,7 @@ import pg from 'pg'
 const { Client } = pg
 
 const client = new Client({
-  host: 'aws-0-ap-southeast-1.pooler.supabase.com',
+  host: 'aws-1-ap-northeast-1.pooler.supabase.com',
   port: 6543,
   database: 'postgres',
   user: 'postgres.ojnkdffldoyozvznzosi',
@@ -64,13 +64,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 4. 出价函数
+-- 4. 出价函数（只能上调 + 写流水）
+CREATE TABLE IF NOT EXISTS public.auction_bid_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    item_id UUID NOT NULL REFERENCES public.auction_items(id) ON DELETE CASCADE,
+    employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+    bid_points INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.auction_bid_logs ENABLE ROW LEVEL SECURITY;
+
 CREATE OR REPLACE FUNCTION public.submit_bid(emp_id UUID, itm_id UUID, bid_pts INTEGER)
 RETURNS TABLE(current_pts INTEGER, locked_pts INTEGER, available_pts INTEGER)
 SECURITY DEFINER AS $$
 DECLARE
     v_current INTEGER; v_locked INTEGER; v_base INTEGER; v_status TEXT;
-    v_old_bid INTEGER := 0; v_total_locked INTEGER;
+    v_old_bid INTEGER; v_total_locked INTEGER;
 BEGIN
     SELECT status, base_points INTO v_status, v_base FROM public.auction_items WHERE id = itm_id;
     IF v_status IS NULL THEN RAISE EXCEPTION '商品不存在'; END IF;
@@ -78,6 +87,9 @@ BEGIN
     IF bid_pts < v_base THEN RAISE EXCEPTION '出价不可低于起标分 %', v_base; END IF;
     SELECT current_points, locked_points INTO v_current, v_locked FROM public.employees WHERE id = emp_id FOR UPDATE;
     SELECT bid_points INTO v_old_bid FROM public.auction_bids WHERE item_id = itm_id AND employee_id = emp_id AND status = 'active';
+    IF v_old_bid IS NOT NULL AND bid_pts <= v_old_bid THEN
+        RAISE EXCEPTION '出价只能上调：当前出价 % 分，新出价须高于此金额', v_old_bid;
+    END IF;
     v_total_locked := v_locked - COALESCE(v_old_bid, 0) + bid_pts;
     IF (v_current - v_total_locked) < 0 THEN RAISE EXCEPTION '积分不足，可用积分：%', (v_current - v_locked); END IF;
     IF v_old_bid IS NOT NULL THEN
@@ -85,6 +97,7 @@ BEGIN
     ELSE
         INSERT INTO public.auction_bids(item_id, employee_id, bid_points) VALUES (itm_id, emp_id, bid_pts);
     END IF;
+    INSERT INTO public.auction_bid_logs(item_id, employee_id, bid_points) VALUES (itm_id, emp_id, bid_pts);
     UPDATE public.employees SET locked_points = v_total_locked WHERE id = emp_id;
     RETURN QUERY SELECT current_points, locked_points, (current_points - locked_points) FROM public.employees WHERE id = emp_id;
 END;

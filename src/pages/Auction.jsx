@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function Auction() {
   const navigate = useNavigate()
+  const { employee } = useAuth()
   const [items, setItems] = useState([])
+  const isAdmin = employee?.role === 'admin'
 
   useEffect(() => {
     loadItems()
@@ -37,7 +40,12 @@ export default function Auction() {
       </div>
 
       {items.map((item) => (
-        <div className="card" key={item.id}>
+        <div
+          className="card"
+          key={item.id}
+          style={{ cursor: 'pointer' }}
+          onClick={() => navigate(`/bid/${item.id}`)}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={{ fontSize: 17 }}>{item.item_name}</h3>
             {getStatusBadge(item.status)}
@@ -52,9 +60,18 @@ export default function Auction() {
           {item.status === 'active' && (
             <button
               className="btn btn-primary"
-              onClick={() => navigate(`/bid/${item.id}`)}
+              onClick={(e) => { e.stopPropagation(); navigate(`/bid/${item.id}`) }}
             >
               我要竞标
+            </button>
+          )}
+          {(item.status === 'settled' || (isAdmin && item.status === 'active')) && (
+            <button
+              className="btn btn-outline"
+              style={{ marginTop: item.status === 'active' ? 8 : 0 }}
+              onClick={(e) => { e.stopPropagation(); navigate(`/bid/${item.id}`) }}
+            >
+              {item.status === 'settled' ? '查看竞标结果' : '查看出价'}
             </button>
           )}
         </div>
