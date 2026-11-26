@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase, db } from '../lib/supabase'
@@ -7,7 +7,7 @@ import { adminItemLabel } from '../lib/itemName'
 export default function Admin() {
   const { employee } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('employees')
+  const [tab, setTab] = useState(null)
   const [employees, setEmployees] = useState([])
   const [items, setItems] = useState([])
   const [records, setRecords] = useState([])
@@ -35,11 +35,23 @@ export default function Admin() {
     refund: '回馈'
   }
 
-  useEffect(() => {
-    loadEmployees()
-    loadItems()
-    loadRecords()
-  }, [])
+  const TABS = [
+    { key: 'employees', icon: '👥', label: '员工管理', desc: '积分调整、名单' },
+    { key: 'items', icon: '🎁', label: '商品管理', desc: '新增、结标、删除' },
+    { key: 'games', icon: '🎮', label: '游戏记录', desc: '撤销加分' },
+    { key: 'announcements', icon: '📢', label: '活动公告', desc: '编辑、隐藏' },
+    { key: 'tools', icon: '🛠️', label: '维护工具', desc: '刷新排名、导入' },
+    { key: 'records', icon: '📋', label: '积分记录', desc: '流水查询、导出' }
+  ]
+
+  const openTab = (key) => {
+    setTab(key)
+    if (key === 'employees') loadEmployees()
+    if (key === 'items') loadItems()
+    if (key === 'records') loadRecords()
+    if (key === 'games') loadGameRecords()
+    if (key === 'announcements') loadAnnouncements()
+  }
 
   const showMsg = (msg) => {
     setMessage(msg)
@@ -306,36 +318,44 @@ export default function Admin() {
 
       {message && <div className="toast">{message}</div>}
 
-      {/* Tab 切换 */}
-      <div style={{ display: 'flex', background: 'white', padding: '8px 12px', gap: 6, overflowX: 'auto' }}>
-        {[
-          { key: 'employees', label: '员工管理' },
-          { key: 'items', label: '商品管理' },
-          { key: 'games', label: '游戏记录' },
-          { key: 'announcements', label: '活动公告' },
-          { key: 'tools', label: '工具' },
-          { key: 'records', label: '积分记录' }
-        ].map((t) => (
+      {/* 功能入口 / 子页导航 */}
+      {tab === null ? (
+        <div style={{ padding: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className="btn"
+              style={{
+                padding: '20px 12px',
+                background: 'white',
+                color: '#333',
+                borderRadius: 12,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 4
+              }}
+              onClick={() => openTab(t.key)}
+            >
+              <span style={{ fontSize: 30 }}>{t.icon}</span>
+              <span style={{ fontSize: 15, fontWeight: 600 }}>{t.label}</span>
+              <span style={{ fontSize: 11, color: '#999', fontWeight: 400 }}>{t.desc}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white' }}>
           <button
-            key={t.key}
-            className="btn"
-            style={{
-              flex: '0 0 auto',
-              padding: '8px 10px',
-              fontSize: 12,
-              whiteSpace: 'nowrap',
-              background: tab === t.key ? '#FF6B35' : '#f0f0f0',
-              color: tab === t.key ? 'white' : '#333'
-            }}
-            onClick={() => {
-              setTab(t.key)
-              if (t.key === 'records') loadRecords()
-              if (t.key === 'games') loadGameRecords()
-              if (t.key === 'announcements') loadAnnouncements()
-            }}
-          >{t.label}</button>
-        ))}
-      </div>
+            className="btn btn-secondary"
+            style={{ width: 'auto', padding: '6px 12px', fontSize: 13 }}
+            onClick={() => setTab(null)}
+          >← 返回</button>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>
+            {TABS.find((t) => t.key === tab)?.icon} {TABS.find((t) => t.key === tab)?.label}
+          </span>
+        </div>
+      )}
 
       {/* 员工管理 */}
       {tab === 'employees' && (

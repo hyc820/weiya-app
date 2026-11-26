@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { db } from '../lib/supabase'
 
 export default function Login() {
   const [employeeNo, setEmployeeNo] = useState('')
@@ -15,14 +14,7 @@ export default function Login() {
       return
     }
     try {
-      const emp = await login(empNo)
-      if (!emp.has_checked_in) {
-        try {
-          await db.checkIn(emp.id)
-        } catch (e) {
-          console.log('签到失败:', e.message)
-        }
-      }
+      await login(empNo)
       navigate('/')
     } catch (e) {
       setError(e.message || '登录失败')
