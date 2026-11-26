@@ -98,6 +98,8 @@ export default function Bid() {
 
   const highestBidders = detail?.highest_bidders || []
   const winner = detail?.winner
+  const tiedWinner =
+    highestBidders.find((b) => winner && b.employee_no === winner.employee_no) || highestBidders[0]
 
   return (
     <div className="app-container">
@@ -194,6 +196,11 @@ export default function Bid() {
                     <span style={{ fontSize: 12, color: '#999', marginLeft: 6 }}>
                       {winner.department} · {winner.employee_no}
                     </span>
+                    {tiedWinner?.created_at && (
+                      <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                        出价时间：{fmtTime(tiedWinner.created_at)}
+                      </div>
+                    )}
                   </div>
                   <span style={{ fontSize: 17, fontWeight: 700, color: '#FF6B35' }}>
                     {winner.win_points} 分
@@ -205,16 +212,50 @@ export default function Bid() {
             </div>
 
             <div style={{ padding: 12, background: '#f5f5f7', borderRadius: 10 }}>
-              <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>出价最高者</div>
+              <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>
+                出价最高者{highestBidders.length > 1 ? `（${highestBidders.length} 人同价）` : ''}
+              </div>
               {highestBidders.length > 0 ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 15, fontWeight: 600 }}>
-                    {highestBidders.map((b) => b.name).join('、')}
-                  </span>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: '#FF6B35' }}>
-                    {detail?.highest_bid} 分
-                  </span>
-                </div>
+                <>
+                  {highestBidders.map((b) => {
+                    const isTieWinner = highestBidders.length > 1 && tiedWinner === b
+                    return (
+                      <div
+                        key={`${b.employee_no}-${b.created_at}`}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}
+                      >
+                        <div>
+                          <div>
+                            <span style={{ fontSize: 15, fontWeight: 600 }}>{b.name}</span>
+                            <span style={{ fontSize: 12, color: '#999', marginLeft: 6 }}>
+                              {b.department} · {b.employee_no}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                            出价时间：{fmtTime(b.created_at)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: '#FF6B35' }}>
+                            {b.bid_points} 分
+                          </div>
+                          {highestBidders.length > 1 && (
+                            <span className={`badge ${isTieWinner ? 'badge-active' : 'badge-settled'}`} style={{ marginTop: 4 }}>
+                              {isTieWinner ? '🏆 得标' : '出价较晚'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {highestBidders.length > 1 && (
+                    <div style={{ marginTop: 8, padding: 10, background: '#FFF8E1', borderRadius: 8, fontSize: 12, color: '#A66300', lineHeight: 1.6 }}>
+                      最高出价共有 {highestBidders.length} 人相同（{detail?.highest_bid} 分）。
+                      按规则「出价金额相同时，以出价时间较早者得标」，
+                      由 <b>{tiedWinner?.name}</b>（{fmtTime(tiedWinner?.created_at)} 出价）获得。
+                    </div>
+                  )}
+                </>
               ) : (
                 <div style={{ color: '#999' }}>无</div>
               )}
