@@ -158,30 +158,53 @@ SELECT
 FROM public.employees;
 
 -- ============================================
+-- 表：盲盒真实信息（匿名不可读）
+-- ============================================
+CREATE TABLE IF NOT EXISTS public.auction_item_secrets (
+    item_id UUID PRIMARY KEY REFERENCES public.auction_items(id) ON DELETE CASCADE,
+    real_name TEXT NOT NULL,
+    real_image_url TEXT,
+    real_description TEXT
+);
+ALTER TABLE public.auction_item_secrets ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
 -- 视图：竞拍商品对外显示（盲盒未结标隐藏真实名称/图片/描述）
 -- ============================================
 CREATE OR REPLACE VIEW public.auction_items_public AS
 SELECT
-    id,
-    item_no,
+    a.id,
+    a.item_no,
     CASE
-        WHEN is_blind AND status <> 'settled' THEN '盲盒' || blind_no
-        WHEN is_blind THEN '盲盒' || blind_no || '-' || item_name
-        ELSE item_name
+        WHEN a.is_blind AND a.status <> 'settled' THEN '盲盒' || a.blind_no
+        WHEN a.is_blind THEN '盲盒' || a.blind_no || '-' || s.real_name
+        ELSE a.item_name
     END AS item_name,
-    CASE WHEN is_blind AND status <> 'settled' THEN NULL ELSE image_url END AS image_url,
-    CASE WHEN is_blind AND status <> 'settled' THEN NULL ELSE description END AS description,
-    base_points,
-    quantity,
-    start_time,
-    end_time,
-    status,
-    created_at,
-    is_blind,
-    blind_no
-FROM public.auction_items;
+    CASE
+        WHEN a.is_blind AND a.status <> 'settled' THEN NULL
+        WHEN a.is_blind THEN s.real_image_url
+        ELSE a.image_url
+    END AS image_url,
+    CASE
+        WHEN a.is_blind AND a.status <> 'settled' THEN NULL
+        WHEN a.is_blind THEN s.real_description
+        ELSE a.description
+    END AS description,
+    a.base_points,
+    a.quantity,
+    a.start_time,
+    a.end_time,
+    a.status,
+    a.created_at,
+    a.is_blind,
+    a.blind_no
+FROM public.auction_items a
+LEFT JOIN public.auction_item_secrets s ON s.item_id = a.id;
 
 GRANT SELECT ON public.auction_items_public TO anon, authenticated;
+
+-- 基础表不再对匿名用户开放，商品信息统一走视图/管理员 RPC
+REVOKE SELECT ON public.auction_items FROM anon, authenticated;
 
 -- ============================================
 -- 函数：签到加积分（事务，原子操作）
@@ -533,7 +556,10 @@ BEGIN
     SELECT name INTO v_name FROM public.employees WHERE id = v_winner_id;
     INSERT INTO public.point_history(employee_id, points, point_type, reference, operator)
     VALUES (v_winner_id, -v_win_pts, 'auction',
-            (SELECT item_name FROM public.auction_items WHERE id = itm_id), '系统');
+            (SELECT COALESCE(s.real_name, a.item_name)
+             FROM public.auction_items a
+             LEFT JOIN public.auction_item_secrets s ON s.item_id = a.id
+             WHERE a.id = itm_id), '系统');
 
     -- 写入得标结果
     INSERT INTO public.auction_winners(item_id, employee_id, win_points)
@@ -615,6 +641,8 @@ RETURNS UUID AS $$
 DECLARE
     v_id UUID;
     v_blind_no INTEGER;
+    v_is_blind BOOLEAN := COALESCE(p_is_blind, false);
+    v_display_name TEXT;
 BEGIN
     IF p_name IS NULL OR length(trim(p_name)) = 0 THEN
         RAISE EXCEPTION '商品名称不能为空';
@@ -623,8 +651,11 @@ BEGIN
         RAISE EXCEPTION '起标积分无效';
     END IF;
 
-    IF COALESCE(p_is_blind, false) THEN
+    IF v_is_blind THEN
         v_blind_no := nextval('public.auction_blind_no_seq');
+        v_display_name := '盲盒' || v_blind_no;
+    ELSE
+        v_display_name := trim(p_name);
     END IF;
 
     INSERT INTO public.auction_items(
@@ -632,17 +663,110 @@ BEGIN
     ) VALUES (
         'ITEM' || to_char(now(), 'YYMMDDHH24MISS') ||
             lpad(nextval('public.auction_item_no_seq')::text, 3, '0'),
-        trim(p_name),
+        v_display_name,
         p_base,
         1,
         p_start,
         p_end,
         'active',
-        COALESCE(p_is_blind, false),
+        v_is_blind,
         v_blind_no
     ) RETURNING id INTO v_id;
 
+    INSERT INTO public.auction_item_secrets(item_id, real_name)
+    VALUES (v_id, trim(p_name));
+
     RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- 函数：管理员读取商品真实信息
+-- ============================================
+CREATE OR REPLACE FUNCTION public.get_auction_items_admin(p_operator_id UUID)
+RETURNS TABLE(
+    id UUID,
+    item_no TEXT,
+    item_name TEXT,
+    image_url TEXT,
+    description TEXT,
+    base_points INTEGER,
+    quantity INTEGER,
+    start_time TIMESTAMPTZ,
+    end_time TIMESTAMPTZ,
+    status TEXT,
+    created_at TIMESTAMPTZ,
+    is_blind BOOLEAN,
+    blind_no INTEGER
+) AS $$
+BEGIN
+    IF COALESCE((SELECT e.role FROM public.employees e WHERE e.id = p_operator_id), '') <> 'admin' THEN
+        RAISE EXCEPTION '只有管理员可以查看商品真实信息';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        a.id,
+        a.item_no,
+        COALESCE(s.real_name, a.item_name),
+        COALESCE(s.real_image_url, a.image_url),
+        COALESCE(s.real_description, a.description),
+        a.base_points,
+        a.quantity,
+        a.start_time,
+        a.end_time,
+        a.status,
+        a.created_at,
+        a.is_blind,
+        a.blind_no
+    FROM public.auction_items a
+    LEFT JOIN public.auction_item_secrets s ON s.item_id = a.id
+    ORDER BY a.start_time;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.get_auction_item_admin(
+    p_item_id UUID,
+    p_operator_id UUID
+)
+RETURNS TABLE(
+    id UUID,
+    item_no TEXT,
+    item_name TEXT,
+    image_url TEXT,
+    description TEXT,
+    base_points INTEGER,
+    quantity INTEGER,
+    start_time TIMESTAMPTZ,
+    end_time TIMESTAMPTZ,
+    status TEXT,
+    created_at TIMESTAMPTZ,
+    is_blind BOOLEAN,
+    blind_no INTEGER
+) AS $$
+BEGIN
+    IF COALESCE((SELECT e.role FROM public.employees e WHERE e.id = p_operator_id), '') <> 'admin' THEN
+        RAISE EXCEPTION '只有管理员可以查看商品真实信息';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        a.id,
+        a.item_no,
+        COALESCE(s.real_name, a.item_name),
+        COALESCE(s.real_image_url, a.image_url),
+        COALESCE(s.real_description, a.description),
+        a.base_points,
+        a.quantity,
+        a.start_time,
+        a.end_time,
+        a.status,
+        a.created_at,
+        a.is_blind,
+        a.blind_no
+    FROM public.auction_items a
+    LEFT JOIN public.auction_item_secrets s ON s.item_id = a.id
+    WHERE a.id = p_item_id;
 END;
 $$ LANGUAGE plpgsql;
 

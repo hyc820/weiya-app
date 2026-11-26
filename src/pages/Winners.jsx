@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import { settledItemLabel } from '../lib/itemName'
 
 export default function Winners() {
   const { employee } = useAuth()
@@ -18,11 +17,23 @@ export default function Winners() {
       .from('auction_winners')
       .select(`
         *,
-        auction_items (item_name, is_blind, blind_no),
         employees (name, department, employee_no)
       `)
       .order('settled_at', { ascending: false })
-    setWinners(data || [])
+
+    const list = data || []
+    const ids = [...new Set(list.map((w) => w.item_id))]
+    const itemMap = {}
+
+    if (ids.length > 0) {
+      const { data: items } = await supabase
+        .from('auction_items_public')
+        .select('*')
+        .in('id', ids)
+      ;(items || []).forEach((it) => { itemMap[it.id] = it })
+    }
+
+    setWinners(list.map((w) => ({ ...w, item: itemMap[w.item_id] })))
   }
 
   return (
@@ -42,7 +53,7 @@ export default function Winners() {
             <div className="card" key={w.id} style={{ background: isMe ? '#E8F5E9' : 'white' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 16 }}>{settledItemLabel(w.auction_items)}</div>
+                  <div style={{ fontWeight: 600, fontSize: 16 }}>{w.item?.item_name || '未知商品'}</div>
                   <div style={{ fontSize: 14, marginTop: 4 }}>
                     <span style={{ color: '#FF6B35', fontWeight: 600 }}>
                       {w.employees?.name || '未知'}

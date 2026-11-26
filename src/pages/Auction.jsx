@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { supabase, db } from '../lib/supabase'
 import { adminItemLabel } from '../lib/itemName'
 
 export default function Auction() {
@@ -15,8 +15,16 @@ export default function Auction() {
   }, [])
 
   const loadItems = async () => {
+    if (isAdmin) {
+      try {
+        setItems(await db.getAdminItems(employee.id))
+      } catch (e) {
+        setItems([])
+      }
+      return
+    }
     const { data } = await supabase
-      .from(isAdmin ? 'auction_items' : 'auction_items_public')
+      .from('auction_items_public')
       .select('*')
       .order('start_time', { ascending: true })
     setItems(data || [])

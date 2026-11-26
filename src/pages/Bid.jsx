@@ -35,8 +35,12 @@ export default function Bid() {
   }, [isAdmin, item?.status])
 
   const loadItem = async () => {
+    if (isAdmin) {
+      setItem(await db.getAdminItem(itemId, employee.id))
+      return
+    }
     const { data } = await supabase
-      .from(isAdmin ? 'auction_items' : 'auction_items_public')
+      .from('auction_items_public')
       .select('*')
       .eq('id', itemId)
       .single()

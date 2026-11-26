@@ -92,11 +92,12 @@ export default function Admin() {
 
   // ===== 商品管理 =====
   const loadItems = async () => {
-    const { data } = await supabase
-      .from('auction_items')
-      .select('*')
-      .order('start_time', { ascending: true })
-    setItems(data || [])
+    try {
+      setItems(await db.getAdminItems(employee.id))
+    } catch (e) {
+      setItems([])
+      showMsg('❌ ' + e.message)
+    }
   }
 
   const handleSettle = async (itemId, itemName) => {

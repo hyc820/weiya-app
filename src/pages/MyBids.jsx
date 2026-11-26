@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { supabase, db } from '../lib/supabase'
 import { adminItemLabel } from '../lib/itemName'
 
 export default function MyBids() {
@@ -26,11 +26,17 @@ export default function MyBids() {
     const itemMap = {}
 
     if (ids.length > 0) {
-      const { data: items } = await supabase
-        .from(isAdmin ? 'auction_items' : 'auction_items_public')
-        .select('*')
-        .in('id', ids)
-      ;(items || []).forEach((it) => { itemMap[it.id] = it })
+      let items = []
+      if (isAdmin) {
+        items = (await db.getAdminItems(employee.id)).filter((it) => ids.includes(it.id))
+      } else {
+        const { data } = await supabase
+          .from('auction_items_public')
+          .select('*')
+          .in('id', ids)
+        items = data || []
+      }
+      items.forEach((it) => { itemMap[it.id] = it })
     }
 
     setBids(list.map((b) => ({ ...b, item: itemMap[b.item_id] })))

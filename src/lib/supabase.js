@@ -105,5 +105,24 @@ export const db = {
     })
     if (error) throw error
     return data
+  },
+
+  // 管理员读取商品列表（含盲盒真实信息）
+  getAdminItems: async (operatorId) => {
+    const { data, error } = await supabase.rpc('get_auction_items_admin', {
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data || []
+  },
+
+  // 管理员读取单个商品（含盲盒真实信息）
+  getAdminItem: async (itemId, operatorId) => {
+    const { data, error } = await supabase.rpc('get_auction_item_admin', {
+      p_item_id: itemId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return (data && data[0]) || null
   }
 }
