@@ -192,32 +192,32 @@ export default function Bid() {
           <div className="card">
             <h3 style={{ marginBottom: 12 }}>竞标结果</h3>
 
-            <div style={{ padding: 12, background: '#FFF8E1', borderRadius: 10, marginBottom: 10 }}>
-              <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>获得物品者</div>
+            <div style={{ padding: 14, background: '#FFF8E1', borderRadius: 10, marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: '#999', marginBottom: 6 }}>获得物品者</div>
               {winner ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <span style={{ fontSize: 17, fontWeight: 700 }}>{winner.name}</span>
-                    <span style={{ fontSize: 12, color: '#999', marginLeft: 6 }}>
+                    <span style={{ fontSize: 20, fontWeight: 700 }}>{winner.name}</span>
+                    <span style={{ fontSize: 13, color: '#999', marginLeft: 6 }}>
                       {winner.department} · {winner.employee_no}
                     </span>
                     {tiedWinner?.created_at && (
-                      <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                      <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
                         出价时间：{fmtTime(tiedWinner.created_at)}
                       </div>
                     )}
                   </div>
-                  <span style={{ fontSize: 17, fontWeight: 700, color: '#FF6B35' }}>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: '#FF6B35' }}>
                     {winner.win_points} 分
                   </span>
                 </div>
               ) : (
-                <div style={{ color: '#999' }}>流标（无人出价）</div>
+                <div style={{ color: '#999', fontSize: 14 }}>流标（无人出价）</div>
               )}
             </div>
 
-            <div style={{ padding: 12, background: '#f5f5f7', borderRadius: 10 }}>
-              <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>
+            <div style={{ padding: 14, background: '#f5f5f7', borderRadius: 10 }}>
+              <div style={{ fontSize: 13, color: '#999', marginBottom: 6 }}>
                 出价最高者{highestBidders.length > 1 ? `（${highestBidders.length} 人同价）` : ''}
               </div>
               {highestBidders.length > 0 ? (
@@ -231,17 +231,17 @@ export default function Bid() {
                       >
                         <div>
                           <div>
-                            <span style={{ fontSize: 15, fontWeight: 600 }}>{b.name}</span>
-                            <span style={{ fontSize: 12, color: '#999', marginLeft: 6 }}>
+                            <span style={{ fontSize: 17, fontWeight: 600 }}>{b.name}</span>
+                            <span style={{ fontSize: 13, color: '#999', marginLeft: 6 }}>
                               {b.department} · {b.employee_no}
                             </span>
                           </div>
-                          <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                          <div style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
                             出价时间：{fmtTime(b.created_at)}
                           </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: '#FF6B35' }}>
+                          <div style={{ fontSize: 17, fontWeight: 700, color: '#FF6B35' }}>
                             {b.bid_points} 分
                           </div>
                           {highestBidders.length > 1 && (
@@ -266,14 +266,14 @@ export default function Bid() {
               )}
             </div>
 
-            <div style={{ display: 'flex', marginTop: 12, textAlign: 'center' }}>
+            <div style={{ display: 'flex', marginTop: 14, textAlign: 'center' }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, color: '#999' }}>出价人数</div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{detail?.bidder_count ?? '-'}</div>
+                <div style={{ fontSize: 13, color: '#999' }}>出价人数</div>
+                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 2 }}>{detail?.bidder_count ?? '-'}</div>
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, color: '#999' }}>出价总次数</div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{detail?.bid_count ?? '-'}</div>
+                <div style={{ fontSize: 13, color: '#999' }}>出价总次数</div>
+                <div style={{ fontSize: 26, fontWeight: 700, marginTop: 2 }}>{detail?.bid_count ?? '-'}</div>
               </div>
             </div>
           </div>
