@@ -4,6 +4,58 @@ import { useAuth } from '../context/AuthContext'
 import { supabase, db } from '../lib/supabase'
 import { adminItemLabel } from '../lib/itemName'
 
+const ROLE_MAP = {
+  admin: 'admin',
+  管理员: 'admin',
+  gamemaster: 'gamemaster',
+  关主: 'gamemaster',
+  employee: 'employee',
+  员工: 'employee'
+}
+
+function parseEmployeeCsv(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  if (lines.length === 0) return { rows: [], errors: [] }
+
+  const delim = lines[0].includes('\t') ? '\t' : ','
+  const rows = []
+  const errors = []
+
+  lines.forEach((line, idx) => {
+    const cells = line.split(delim).map((c) => c.trim().replace(/^"(.*)"$/, '$1'))
+    if (idx === 0 && /^(工号|employee_?no)$/i.test(cells[0])) return
+
+    const employeeNo = cells[0] || ''
+    const name = cells[1] || ''
+    const department = cells[2] || ''
+    const roleRaw = cells[3] || ''
+
+    if (!employeeNo || !name) {
+      errors.push(`第 ${idx + 1} 行：工号或姓名为空`)
+      return
+    }
+
+    const role =
+      ROLE_MAP[roleRaw] ||
+      ROLE_MAP[roleRaw.toLowerCase()] ||
+      (roleRaw ? '' : 'employee')
+
+    if (!role) {
+      errors.push(`第 ${idx + 1} 行：角色「${roleRaw}」无效（admin / gamemaster / employee）`)
+      return
+    }
+
+    rows.push({
+      employee_no: employeeNo.toUpperCase(),
+      name,
+      department,
+      role
+    })
+  })
+
+  return { rows, errors }
+}
+
 export default function Admin() {
   const { employee } = useAuth()
   const navigate = useNavigate()
@@ -22,6 +74,9 @@ export default function Admin() {
     active: true
   })
   const [recordKeyword, setRecordKeyword] = useState('')
+  const [importText, setImportText] = useState('')
+  const [importPreview, setImportPreview] = useState({ rows: [], errors: [] })
+  const [importing, setImporting] = useState(false)
   const [showItemForm, setShowItemForm] = useState(false)
   const [form, setForm] = useState({ name: '', base: '100', start: '', end: '', isBlind: false })
   const [message, setMessage] = useState('')
@@ -250,6 +305,48 @@ export default function Admin() {
   }
 
   // ===== 刷新排行榜 =====
+  // ===== 员工导入 =====
+  const handleImportTextChange = (value) => {
+    setImportText(value)
+    setImportPreview(parseEmployeeCsv(value))
+  }
+
+  const handleImportFile = (e) => {
+    const file = e.target.files && e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = String(reader.result || '')
+      setImportText(text)
+      setImportPreview(parseEmployeeCsv(text))
+    }
+    reader.readAsText(file, 'UTF-8')
+    e.target.value = ''
+  }
+
+  const handleImportEmployees = async () => {
+    if (importPreview.errors.length > 0) {
+      showMsg('❌ 请先修正格式错误')
+      return
+    }
+    if (importPreview.rows.length === 0) {
+      showMsg('❌ 没有可导入的数据')
+      return
+    }
+    setImporting(true)
+    try {
+      const msg = await db.importEmployees(importPreview.rows, employee.id)
+      showMsg('✅ ' + msg)
+      setImportText('')
+      setImportPreview({ rows: [], errors: [] })
+      loadEmployees()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const handleRefreshRanking = async () => {
     try {
       await db.refreshRanking()
@@ -645,11 +742,69 @@ export default function Admin() {
           <button className="btn btn-primary" onClick={handleRefreshRanking}>
             🔄 刷新排行榜排名
           </button>
-          <div style={{ marginTop: 16, padding: 12, background: '#f5f5f7', borderRadius: 8, fontSize: 13, color: '#666' }}>
-            <p>💡 <b>导入员工名单：</b></p>
-            <p>1. 准备 Excel：工号、姓名、部门、角色(admin/gamemaster/employee)</p>
-            <p>2. 在 Supabase 控制台 → Table Editor → employees 表</p>
-            <p>3. 点击「Import」上传 CSV 文件</p>
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+            <h4 style={{ fontSize: 15, marginBottom: 8 }}>📥 导入员工名单</h4>
+            <p style={{ fontSize: 12, color: '#999', lineHeight: 1.6, marginBottom: 8 }}>
+              每行一人，格式：工号,姓名,部门,角色。
+              角色可填 admin / gamemaster / employee，也可填 管理员 / 关主 / 员工。
+              已存在的工号只更新姓名、部门、角色，不影响积分和签到状态。
+            </p>
+
+            <textarea
+              className="input"
+              rows={6}
+              style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6 }}
+              placeholder={'EMP006,周七,财务部,employee\nEMP007,孙八,市场部,gamemaster'}
+              value={importText}
+              onChange={(e) => handleImportTextChange(e.target.value)}
+            />
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <label
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  background: '#f0f0f0',
+                  borderRadius: 8,
+                  textAlign: 'center',
+                  fontSize: 13,
+                  cursor: 'pointer'
+                }}
+              >
+                选择 CSV 文件
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  style={{ display: 'none' }}
+                  onChange={handleImportFile}
+                />
+              </label>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, padding: 10, fontSize: 13 }}
+                disabled={importing}
+                onClick={handleImportEmployees}
+              >
+                {importing ? '导入中…' : `导入 ${importPreview.rows.length} 人`}
+              </button>
+            </div>
+
+            {importPreview.errors.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#E63946', lineHeight: 1.6 }}>
+                {importPreview.errors.slice(0, 5).map((err, i) => (
+                  <div key={i}>{err}</div>
+                ))}
+                {importPreview.errors.length > 5 && (
+                  <div>… 共 {importPreview.errors.length} 处错误</div>
+                )}
+              </div>
+            )}
+
+            {importPreview.rows.length > 0 && importPreview.errors.length === 0 && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#16A34A' }}>
+                已解析 {importPreview.rows.length} 人，可导入
+              </div>
+            )}
           </div>
         </div>
       )}

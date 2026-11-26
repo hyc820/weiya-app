@@ -148,5 +148,15 @@ export const db = {
     })
     if (error) throw error
     return data
+  },
+
+  // 批量导入员工（按工号更新姓名/部门/角色，不影响积分）
+  importEmployees: async (rows, operatorId) => {
+    const { data, error } = await supabase.rpc('import_employees', {
+      p_rows: rows,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
   }
 }
