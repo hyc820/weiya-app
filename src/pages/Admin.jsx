@@ -10,6 +10,7 @@ export default function Admin() {
   const [employees, setEmployees] = useState([])
   const [items, setItems] = useState([])
   const [records, setRecords] = useState([])
+  const [gameRecords, setGameRecords] = useState([])
   const [recordKeyword, setRecordKeyword] = useState('')
   const [showItemForm, setShowItemForm] = useState(false)
   const [form, setForm] = useState({ name: '', base: '100', start: '', end: '' })
@@ -18,6 +19,7 @@ export default function Admin() {
   const TYPE_LABEL = {
     checkin: '报到',
     game: '游戏',
+    game_revoke: '撤销游戏加分',
     auction: '竞标',
     admin: '管理员调整',
     refund: '回馈'
@@ -55,6 +57,32 @@ export default function Admin() {
     try {
       await db.adjustPoints(empId, num, employee.name, remark)
       showMsg(`✅ ${name} 积分已调整 ${num > 0 ? '+' : ''}${num}`)
+      loadEmployees()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    }
+  }
+
+  // ===== 游戏记录 =====
+  const loadGameRecords = async () => {
+    const { data } = await supabase
+      .from('game_record')
+      .select(`
+        *,
+        employees (name, employee_no, department)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(500)
+    setGameRecords(data || [])
+  }
+
+  const handleRevokeGame = async (rec) => {
+    const empName = rec.employees?.name || '该员工'
+    if (!confirm(`确认撤销「${empName}」在「${rec.game_name}」的 +${rec.points} 分？\n撤销后积分扣回，该员工可重新参与此游戏。`)) return
+    try {
+      const msg = await db.revokeGamePoint(rec.id, employee.id)
+      showMsg('✅ ' + msg)
+      loadGameRecords()
       loadEmployees()
     } catch (e) {
       showMsg('❌ ' + e.message)
@@ -209,51 +237,32 @@ export default function Admin() {
       {message && <div className="toast">{message}</div>}
 
       {/* Tab 切换 */}
-      <div style={{ display: 'flex', background: 'white', padding: '8px 12px', gap: 8 }}>
-        <button
-          className="btn"
-          style={{
-            flex: 1,
-            padding: '8px',
-            fontSize: 13,
-            background: tab === 'employees' ? '#FF6B35' : '#f0f0f0',
-            color: tab === 'employees' ? 'white' : '#333'
-          }}
-          onClick={() => setTab('employees')}
-        >员工管理</button>
-        <button
-          className="btn"
-          style={{
-            flex: 1,
-            padding: '8px',
-            fontSize: 13,
-            background: tab === 'items' ? '#FF6B35' : '#f0f0f0',
-            color: tab === 'items' ? 'white' : '#333'
-          }}
-          onClick={() => setTab('items')}
-        >商品管理</button>
-        <button
-          className="btn"
-          style={{
-            flex: 1,
-            padding: '8px',
-            fontSize: 13,
-            background: tab === 'tools' ? '#FF6B35' : '#f0f0f0',
-            color: tab === 'tools' ? 'white' : '#333'
-          }}
-          onClick={() => setTab('tools')}
-        >工具</button>
-        <button
-          className="btn"
-          style={{
-            flex: 1,
-            padding: '8px',
-            fontSize: 13,
-            background: tab === 'records' ? '#FF6B35' : '#f0f0f0',
-            color: tab === 'records' ? 'white' : '#333'
-          }}
-          onClick={() => { setTab('records'); loadRecords() }}
-        >积分记录</button>
+      <div style={{ display: 'flex', background: 'white', padding: '8px 12px', gap: 6, overflowX: 'auto' }}>
+        {[
+          { key: 'employees', label: '员工管理' },
+          { key: 'items', label: '商品管理' },
+          { key: 'games', label: '游戏记录' },
+          { key: 'tools', label: '工具' },
+          { key: 'records', label: '积分记录' }
+        ].map((t) => (
+          <button
+            key={t.key}
+            className="btn"
+            style={{
+              flex: '0 0 auto',
+              padding: '8px 10px',
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+              background: tab === t.key ? '#FF6B35' : '#f0f0f0',
+              color: tab === t.key ? 'white' : '#333'
+            }}
+            onClick={() => {
+              setTab(t.key)
+              if (t.key === 'records') loadRecords()
+              if (t.key === 'games') loadGameRecords()
+            }}
+          >{t.label}</button>
+        ))}
       </div>
 
       {/* 员工管理 */}
@@ -364,6 +373,43 @@ export default function Admin() {
               >删除商品</button>
             </div>
           ))}
+        </>
+      )}
+
+      {/* 游戏记录 */}
+      {tab === 'games' && (
+        <>
+          <div style={{ padding: '12px 12px 0', fontSize: 12, color: '#999' }}>
+            共 {gameRecords.length} 条记录（最多显示最近 500 条）
+          </div>
+          <div className="card">
+            {gameRecords.map((r) => (
+              <div className="list-item" key={r.id}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, fontSize: 14 }}>
+                    {r.employees?.name || '未知'}
+                    <span style={{ fontSize: 11, marginLeft: 6, color: '#999' }}>
+                      {r.employees?.employee_no}
+                    </span>
+                    <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 600, color: '#2A9D8F' }}>
+                      +{r.points}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                    {r.game_name} · 操作人 {r.operator} · {new Date(r.created_at).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-outline"
+                  style={{ width: 'auto', padding: '6px 10px', fontSize: 12, color: '#E63946', borderColor: '#E63946' }}
+                  onClick={() => handleRevokeGame(r)}
+                >撤销</button>
+              </div>
+            ))}
+            {gameRecords.length === 0 && (
+              <p style={{ textAlign: 'center', color: '#999', padding: 20 }}>暂无游戏加分记录</p>
+            )}
+          </div>
         </>
       )}
 

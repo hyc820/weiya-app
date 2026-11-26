@@ -42,9 +42,10 @@ export default function GameMaster() {
   const loadCompletedGames = async (empId) => {
     const { data } = await supabase
       .from('game_record')
-      .select('game_name')
+      .select('*')
       .eq('employee_id', empId)
-    return (data || []).map(r => r.game_name)
+      .order('created_at', { ascending: true })
+    return data || []
   }
 
   // 手动输入查询
@@ -105,6 +106,33 @@ export default function GameMaster() {
     try {
       await db.addGamePoint(target.id, selectedGame, points, employee.name)
       setMessage(`✅ ${target.name} 获得 ${points} 积分！`)
+      const { data } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('id', target.id)
+        .single()
+      setTarget(data)
+      setCompletedGames(await loadCompletedGames(target.id))
+      setSelectedGame('')
+    } catch (e) {
+      setMessage('❌ ' + e.message)
+    }
+  }
+
+  // 关主：本人 10 分钟内；管理员：不限
+  const canRevoke = (rec) => {
+    if (employee?.role === 'admin') return true
+    return (
+      rec.operator === employee?.name &&
+      Date.now() - new Date(rec.created_at).getTime() <= 10 * 60 * 1000
+    )
+  }
+
+  const handleRevoke = async (rec) => {
+    if (!confirm(`确认撤销「${target.name}」在「${rec.game_name}」的 +${rec.points} 分？\n撤销后积分扣回，该员工可重新参与此游戏。`)) return
+    try {
+      const msg = await db.revokeGamePoint(rec.id, employee.id)
+      setMessage('✅ ' + msg)
       const { data } = await supabase
         .from('employees')
         .select('*')
@@ -209,7 +237,7 @@ export default function GameMaster() {
             <h3 style={{ marginBottom: 12 }}>选择游戏</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {GAMES.map((g) => {
-                const done = completedGames.includes(g)
+                const done = completedGames.some((r) => r.game_name === g)
                 return (
                   <button
                     key={g}
@@ -233,6 +261,38 @@ export default function GameMaster() {
               })}
             </div>
           </div>
+
+          {completedGames.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginBottom: 12 }}>已加分项目</h3>
+              {completedGames.map((rec) => (
+                <div className="list-item" key={rec.id}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500, fontSize: 14 }}>
+                      {rec.game_name}
+                      <span style={{ color: '#2A9D8F', fontWeight: 600, marginLeft: 8 }}>
+                        +{rec.points}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+                      {new Date(rec.created_at).toLocaleString('zh-CN')} · 操作人 {rec.operator}
+                    </div>
+                  </div>
+                  {canRevoke(rec) ? (
+                    <button
+                      className="btn btn-outline"
+                      style={{ width: 'auto', padding: '6px 10px', fontSize: 12, color: '#E63946', borderColor: '#E63946' }}
+                      onClick={() => handleRevoke(rec)}
+                    >
+                      撤销
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 12, color: '#bbb' }}>需管理员撤销</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {selectedGame && (
             <div className="card">

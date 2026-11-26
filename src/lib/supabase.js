@@ -28,6 +28,16 @@ export const db = {
     return data[0]
   },
 
+  // 撤销游戏加分（管理员不限；关主限本人 10 分钟内）
+  revokeGamePoint: async (gameRecordId, operatorId) => {
+    const { data, error } = await supabase.rpc('revoke_game_point', {
+      p_game_record_id: gameRecordId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
   // 提交出价
   submitBid: async (employeeId, itemId, bidPoints) => {
     const { data, error } = await supabase.rpc('submit_bid', {
