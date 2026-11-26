@@ -454,6 +454,53 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================
+-- 函数：管理员删除竞拍商品（进行中先释放冻结积分）
+-- ============================================
+CREATE OR REPLACE FUNCTION public.delete_auction_item(
+    p_item_id UUID,
+    p_operator_id UUID
+)
+RETURNS TEXT AS $$
+DECLARE
+    v_role TEXT;
+    v_name TEXT;
+    v_status TEXT;
+    v_bid_count INTEGER;
+BEGIN
+    SELECT item_name, status INTO v_name, v_status
+    FROM public.auction_items WHERE id = p_item_id;
+
+    IF v_name IS NULL THEN
+        RAISE EXCEPTION '商品不存在';
+    END IF;
+
+    SELECT role INTO v_role FROM public.employees WHERE id = p_operator_id;
+    IF COALESCE(v_role, '') <> 'admin' THEN
+        RAISE EXCEPTION '只有管理员可以删除竞拍商品';
+    END IF;
+
+    IF v_status = 'active' THEN
+        UPDATE public.employees e
+        SET locked_points = GREATEST(e.locked_points - sub.pts, 0)
+        FROM (
+            SELECT employee_id, SUM(bid_points) AS pts
+            FROM public.auction_bids
+            WHERE item_id = p_item_id AND status = 'active'
+            GROUP BY employee_id
+        ) sub
+        WHERE e.id = sub.employee_id;
+    END IF;
+
+    SELECT COUNT(*) INTO v_bid_count
+    FROM public.auction_bids WHERE item_id = p_item_id;
+
+    DELETE FROM public.auction_items WHERE id = p_item_id;
+
+    RETURN '已删除「' || v_name || '」（清理出价 ' || v_bid_count || ' 条）';
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
 -- 函数：管理员调整积分
 -- ============================================
 CREATE OR REPLACE FUNCTION public.adjust_points(

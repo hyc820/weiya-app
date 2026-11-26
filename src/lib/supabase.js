@@ -84,5 +84,15 @@ export const db = {
     })
     if (error) throw error
     return data
+  },
+
+  // 删除竞拍商品（仅管理员）
+  deleteAuctionItem: async (itemId, operatorId) => {
+    const { data, error } = await supabase.rpc('delete_auction_item', {
+      p_item_id: itemId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
   }
 }

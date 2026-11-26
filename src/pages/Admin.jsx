@@ -82,6 +82,24 @@ export default function Admin() {
     }
   }
 
+  const handleDeleteItem = async (item) => {
+    const note =
+      item.status === 'active'
+        ? '该商品竞拍进行中，删除后出价记录将被清除，并释放已冻结的积分。'
+        : item.status === 'settled'
+          ? '该商品已结标，删除后出价与得标记录将被清除；已扣积分不会自动退回。'
+          : '该商品尚未开始。'
+    if (!confirm(`确认删除「${item.item_name}」？\n${note}\n删除后不可恢复。`)) return
+    try {
+      const result = await db.deleteAuctionItem(item.id, employee.id)
+      showMsg('✅ ' + result)
+      loadItems()
+      loadEmployees()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    }
+  }
+
   // 转成 datetime-local 需要的本地时间格式
   const toLocalInput = (d) => {
     const p = (n) => String(n).padStart(2, '0')
@@ -339,6 +357,11 @@ export default function Admin() {
                 style={{ marginTop: 8 }}
                 onClick={() => navigate(`/bid/${item.id}`)}
               >查看出价详情</button>
+              <button
+                className="btn btn-outline"
+                style={{ marginTop: 8, color: '#E63946', borderColor: '#E63946' }}
+                onClick={() => handleDeleteItem(item)}
+              >删除商品</button>
             </div>
           ))}
         </>
