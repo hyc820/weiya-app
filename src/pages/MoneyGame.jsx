@@ -35,8 +35,6 @@ export default function MoneyGame() {
   const maxComboRef = useRef(0)
   const lastTapRef = useRef(0)
   const audioRef = useRef(null)
-  const perfectAudioRef = useRef(null)
-  const unbelievableAudioRef = useRef(null)
   const spawnTimerRef = useRef(null)
   const milestoneTimerRef = useRef(null)
 
@@ -187,33 +185,6 @@ export default function MoneyGame() {
     }
   }
 
-  const speak = (text) => {
-    if (muted) return
-    if (!('speechSynthesis' in window)) return
-    try {
-      window.speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'en-US'
-      u.rate = 1.05
-      u.pitch = 1.3
-      u.volume = 1
-      window.speechSynthesis.speak(u)
-    } catch {
-      // 忽略语音异常
-    }
-  }
-
-  // 预加载英文语音，避免现场首次播放延迟
-  useEffect(() => {
-    const base = import.meta.env.BASE_URL
-    perfectAudioRef.current = new Audio(`${base}sounds/perfect.m4a`)
-    unbelievableAudioRef.current = new Audio(`${base}sounds/unbelievable.m4a`)
-    perfectAudioRef.current.preload = 'auto'
-    perfectAudioRef.current.volume = 0.9
-    unbelievableAudioRef.current.preload = 'auto'
-    unbelievableAudioRef.current.volume = 0.65
-  }, [])
-
   const playPerfectStinger = () => {
     boing()
     tone(880, 0.07, 'sine', 0.05, 0.02, 1760)
@@ -243,48 +214,12 @@ export default function MoneyGame() {
     crowdCheer(0.4)
   }
 
-  const playVoice = (kind) => {
-    if (muted) return
-    const audio = kind === 'perfect' ? perfectAudioRef.current : unbelievableAudioRef.current
-    const fallback = kind === 'perfect' ? 'Perfect!' : 'Unbelievable!'
-    if (audio) {
-      try {
-        audio.currentTime = 0
-        const p = audio.play()
-        if (p && p.catch) p.catch(() => speak(fallback))
-        return
-      } catch {
-        // 继续走语音合成兜底
-      }
-    }
-    speak(fallback)
-  }
-
   useEffect(() => {
     localStorage.setItem('mg_muted', muted ? '1' : '0')
   }, [muted])
 
   const startGame = () => {
-    if (window.speechSynthesis) window.speechSynthesis.cancel()
     ensureAudio()
-    // 在用户点击时解锁音频，保证 iOS 上连击语音能播放
-    ;[perfectAudioRef.current, unbelievableAudioRef.current].forEach((a) => {
-      if (!a) return
-      try {
-        const p = a.play()
-        if (p && p.then) {
-          p.then(() => {
-            a.pause()
-            a.currentTime = 0
-          }).catch(() => {})
-        } else {
-          a.pause()
-          a.currentTime = 0
-        }
-      } catch {
-        // 忽略解锁异常
-      }
-    })
     scoreRef.current = 0
     comboRef.current = 0
     maxComboRef.current = 0
@@ -420,7 +355,6 @@ export default function MoneyGame() {
     return () => {
       clearTimeout(spawnTimerRef.current)
       clearTimeout(milestoneTimerRef.current)
-      if (window.speechSynthesis) window.speechSynthesis.cancel()
     }
   }, [])
 
@@ -453,11 +387,9 @@ export default function MoneyGame() {
 
     if (nextCombo === 15) {
       playPerfectStinger()
-      playVoice('perfect')
       showMilestone('Perfect!', '#FFD166')
     } else if (nextCombo === 30) {
       playUnbelievableStinger()
-      playVoice('unbelievable')
       showMilestone('Unbelievable!', '#FF6B9D')
     }
 
@@ -580,6 +512,45 @@ export default function MoneyGame() {
             </div>
           </div>
 
+          <div
+            style={{
+              height: 38,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: 2
+            }}
+          >
+            {combo >= 3 && (
+              <div
+                key={combo}
+                style={{
+                  position: 'relative',
+                  padding: '4px 14px 6px',
+                  borderRadius: 999,
+                  background: 'rgba(255,209,102,.18)',
+                  border: '1px solid rgba(255,209,102,.5)',
+                  color: '#FFD166',
+                  fontWeight: 800,
+                  fontSize: 14,
+                  overflow: 'hidden'
+                }}
+              >
+                连击 x{combo}{multiplier > 1 ? ` · ${multiplier}倍` : ''}
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    bottom: 0,
+                    height: 2,
+                    background: '#FFD166',
+                    animation: 'mg-combo-countdown .85s linear forwards'
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
           <div style={{ height: 4, margin: '0 16px', background: 'rgba(255,255,255,.15)', borderRadius: 2 }}>
             <div
               style={{
@@ -591,38 +562,6 @@ export default function MoneyGame() {
               }}
             />
           </div>
-
-          {combo >= 3 && (
-            <div
-              key={combo}
-              style={{
-                position: 'absolute',
-                top: 112,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                padding: '4px 14px 6px',
-                borderRadius: 999,
-                background: 'rgba(255,209,102,.18)',
-                border: '1px solid rgba(255,209,102,.5)',
-                color: '#FFD166',
-                fontWeight: 800,
-                fontSize: 14,
-                overflow: 'hidden'
-              }}
-            >
-              连击 x{combo}{multiplier > 1 ? ` · ${multiplier}倍` : ''}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  bottom: 0,
-                  height: 2,
-                  background: '#FFD166',
-                  animation: 'mg-combo-countdown .85s linear forwards'
-                }}
-              />
-            </div>
-          )}
 
           {remaining <= 5 && (
             <div
