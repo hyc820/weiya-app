@@ -128,7 +128,7 @@ export default function MoneyGame() {
       lfo.connect(lfoGain)
       lfoGain.connect(osc.frequency)
       gain.gain.setValueAtTime(0.0001, t0)
-      gain.gain.exponentialRampToValueAtTime(0.09, t0 + 0.015)
+      gain.gain.exponentialRampToValueAtTime(0.06, t0 + 0.015)
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32)
       osc.connect(gain)
       gain.connect(ctx.destination)
@@ -208,21 +208,21 @@ export default function MoneyGame() {
     const base = import.meta.env.BASE_URL
     perfectAudioRef.current = new Audio(`${base}sounds/perfect.m4a`)
     unbelievableAudioRef.current = new Audio(`${base}sounds/unbelievable.m4a`)
-    ;[perfectAudioRef.current, unbelievableAudioRef.current].forEach((a) => {
-      a.preload = 'auto'
-      a.volume = 0.62
-    })
+    perfectAudioRef.current.preload = 'auto'
+    perfectAudioRef.current.volume = 0.9
+    unbelievableAudioRef.current.preload = 'auto'
+    unbelievableAudioRef.current.volume = 0.65
   }, [])
 
   const playPerfectStinger = () => {
     boing()
-    tone(880, 0.09, 'sine', 0.1, 0.02, 1760)
-    noiseBurst(0.28, 0.045, 0.02, 3600)
-    ;[1046, 1319, 1568].forEach((f, i) => tone(f, 0.18, 'triangle', 0.095, i * 0.07))
-    tone(2093, 0.16, 'sine', 0.07, 0.22)
-    tone(2637, 0.13, 'sine', 0.045, 0.28)
+    tone(880, 0.07, 'sine', 0.05, 0.02, 1760)
+    noiseBurst(0.2, 0.03, 0.02, 3600)
+    ;[1046, 1319, 1568].forEach((f, i) => tone(f, 0.18, 'triangle', 0.08, 0.5 + i * 0.07))
+    tone(2093, 0.16, 'sine', 0.06, 0.72)
+    tone(2637, 0.13, 'sine', 0.04, 0.8)
     for (let i = 0; i < 6; i++) {
-      tone(1900 + Math.random() * 1700, 0.09, 'sine', 0.025, 0.18 + i * 0.045)
+      tone(1900 + Math.random() * 1700, 0.09, 'sine', 0.022, 0.65 + i * 0.045)
     }
   }
 
@@ -472,7 +472,7 @@ export default function MoneyGame() {
   const showMilestone = (text, color) => {
     clearTimeout(milestoneTimerRef.current)
     setMilestone({ text, color })
-    milestoneTimerRef.current = setTimeout(() => setMilestone(null), 1200)
+    milestoneTimerRef.current = setTimeout(() => setMilestone(null), 1700)
   }
 
   const multiplier = combo >= 30 ? 2 : combo >= 15 ? 1.5 : 1
@@ -597,7 +597,7 @@ export default function MoneyGame() {
               key={combo}
               style={{
                 position: 'absolute',
-                top: 78,
+                top: 112,
                 left: '50%',
                 transform: 'translateX(-50%)',
                 padding: '4px 14px 6px',
@@ -628,7 +628,7 @@ export default function MoneyGame() {
             <div
               style={{
                 position: 'absolute',
-                top: 122,
+                top: 156,
                 left: '50%',
                 transform: 'translateX(-50%)',
                 color: '#FF6B6B',
@@ -653,7 +653,7 @@ export default function MoneyGame() {
                 fontWeight: 900,
                 color: milestone.color,
                 textShadow: `0 0 30px ${milestone.color}`,
-                animation: 'mg-milestone 1.2s ease-out forwards',
+                animation: 'mg-milestone 1.7s ease-out forwards',
                 pointerEvents: 'none',
                 whiteSpace: 'nowrap',
                 zIndex: 6
