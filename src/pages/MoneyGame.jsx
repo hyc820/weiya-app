@@ -109,6 +109,84 @@ export default function MoneyGame() {
     }
   }
 
+  const boing = (delay = 0) => {
+    if (muted) return
+    const ctx = ensureAudio()
+    if (!ctx) return
+    try {
+      const t0 = ctx.currentTime + delay
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      const lfo = ctx.createOscillator()
+      const lfoGain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(620, t0)
+      osc.frequency.exponentialRampToValueAtTime(300, t0 + 0.28)
+      lfo.type = 'sine'
+      lfo.frequency.setValueAtTime(22, t0)
+      lfoGain.gain.setValueAtTime(160, t0)
+      lfo.connect(lfoGain)
+      lfoGain.connect(osc.frequency)
+      gain.gain.setValueAtTime(0.0001, t0)
+      gain.gain.exponentialRampToValueAtTime(0.09, t0 + 0.015)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(t0)
+      lfo.start(t0)
+      osc.stop(t0 + 0.35)
+      lfo.stop(t0 + 0.35)
+    } catch {
+      // 忽略音效异常
+    }
+  }
+
+  const crowdCheer = (delay = 0) => {
+    if (muted) return
+    const ctx = ensureAudio()
+    if (!ctx) return
+    try {
+      const duration = 1.6
+      const length = Math.floor(ctx.sampleRate * duration)
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < length; i++) {
+        const t = i / length
+        const env = Math.min(1, t / 0.12) * Math.pow(1 - t, 1.4)
+        data[i] = (Math.random() * 2 - 1) * env
+      }
+      const src = ctx.createBufferSource()
+      src.buffer = buffer
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.value = 1100
+      filter.Q.value = 0.7
+      const gain = ctx.createGain()
+      gain.gain.value = 0.14
+      const t0 = ctx.currentTime + delay
+      const lfo = ctx.createOscillator()
+      lfo.frequency.value = 4.2
+      const lfoGain = ctx.createGain()
+      lfoGain.gain.value = 0.05
+      lfo.connect(lfoGain)
+      lfoGain.connect(gain.gain)
+      src.connect(filter)
+      filter.connect(gain)
+      gain.connect(ctx.destination)
+      src.start(t0)
+      lfo.start(t0)
+      src.stop(t0 + duration)
+      lfo.stop(t0 + duration)
+      for (let i = 0; i < 5; i++) {
+        const start = 0.15 + Math.random() * 0.7
+        const base = 520 + Math.random() * 420
+        tone(base, 0.35, 'sine', 0.022, delay + start, base * 1.45)
+      }
+    } catch {
+      // 忽略欢呼音效异常
+    }
+  }
+
   const speak = (text) => {
     if (muted) return
     if (!('speechSynthesis' in window)) return
@@ -137,8 +215,9 @@ export default function MoneyGame() {
   }, [])
 
   const playPerfectStinger = () => {
-    tone(880, 0.09, 'sine', 0.1, 0, 1760)
-    noiseBurst(0.28, 0.045, 0, 3600)
+    boing()
+    tone(880, 0.09, 'sine', 0.1, 0.02, 1760)
+    noiseBurst(0.28, 0.045, 0.02, 3600)
     ;[1046, 1319, 1568].forEach((f, i) => tone(f, 0.18, 'triangle', 0.095, i * 0.07))
     tone(2093, 0.16, 'sine', 0.07, 0.22)
     tone(2637, 0.13, 'sine', 0.045, 0.28)
@@ -161,6 +240,7 @@ export default function MoneyGame() {
       tone(2000 + Math.random() * 2000, 0.12, 'sine', 0.022, 0.5 + i * 0.045)
     }
     noiseBurst(0.9, 0.03, 0.46, 5200)
+    crowdCheer(0.4)
   }
 
   const playVoice = (kind) => {
