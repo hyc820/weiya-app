@@ -35,6 +35,8 @@ export default function MoneyGame() {
   const maxComboRef = useRef(0)
   const lastTapRef = useRef(0)
   const audioRef = useRef(null)
+  const perfectAudioRef = useRef(null)
+  const unbelievableAudioRef = useRef(null)
   const spawnTimerRef = useRef(null)
   const milestoneTimerRef = useRef(null)
 
@@ -94,6 +96,34 @@ export default function MoneyGame() {
     }
   }
 
+  // 预加载英文语音，避免现场首次播放延迟
+  useEffect(() => {
+    const base = import.meta.env.BASE_URL
+    perfectAudioRef.current = new Audio(`${base}sounds/perfect.m4a`)
+    unbelievableAudioRef.current = new Audio(`${base}sounds/unbelievable.m4a`)
+    ;[perfectAudioRef.current, unbelievableAudioRef.current].forEach((a) => {
+      a.preload = 'auto'
+      a.volume = 1
+    })
+  }, [])
+
+  const playVoice = (kind) => {
+    if (muted) return
+    const audio = kind === 'perfect' ? perfectAudioRef.current : unbelievableAudioRef.current
+    const fallback = kind === 'perfect' ? 'Perfect!' : 'Unbelievable!'
+    if (audio) {
+      try {
+        audio.currentTime = 0
+        const p = audio.play()
+        if (p && p.catch) p.catch(() => speak(fallback))
+        return
+      } catch {
+        // 继续走语音合成兜底
+      }
+    }
+    speak(fallback)
+  }
+
   useEffect(() => {
     localStorage.setItem('mg_muted', muted ? '1' : '0')
   }, [muted])
@@ -101,6 +131,24 @@ export default function MoneyGame() {
   const startGame = () => {
     if (window.speechSynthesis) window.speechSynthesis.cancel()
     ensureAudio()
+    // 在用户点击时解锁音频，保证 iOS 上连击语音能播放
+    ;[perfectAudioRef.current, unbelievableAudioRef.current].forEach((a) => {
+      if (!a) return
+      try {
+        const p = a.play()
+        if (p && p.then) {
+          p.then(() => {
+            a.pause()
+            a.currentTime = 0
+          }).catch(() => {})
+        } else {
+          a.pause()
+          a.currentTime = 0
+        }
+      } catch {
+        // 忽略解锁异常
+      }
+    })
     scoreRef.current = 0
     comboRef.current = 0
     maxComboRef.current = 0
@@ -267,15 +315,15 @@ export default function MoneyGame() {
     }
     if (navigator.vibrate) navigator.vibrate(bill.value >= 50 ? 18 : 8)
 
-    if (nextCombo === 10) {
+    if (nextCombo === 15) {
       ;[784, 988, 1319].forEach((f, i) => tone(f, 0.17, 'sine', 0.09, i * 0.07))
       tone(2093, 0.12, 'triangle', 0.035, 0.22)
-      setTimeout(() => speak('Perfect!'), 90)
+      playVoice('perfect')
       showMilestone('Perfect!', '#FFD166')
-    } else if (nextCombo === 15) {
+    } else if (nextCombo === 30) {
       ;[784, 988, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.16, 'sine', 0.09, i * 0.065))
       tone(2637, 0.14, 'triangle', 0.03, 0.34)
-      setTimeout(() => speak('Unbelievable!'), 90)
+      playVoice('unbelievable')
       showMilestone('Unbelievable!', '#FF6B9D')
     }
 
@@ -560,7 +608,7 @@ export default function MoneyGame() {
           <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>
             {DURATION} 秒内狂点掉落的钞票，面额越大得分越高。<br />
             中间会有三波钞票雨，最后 5 秒全面加速。<br />
-            连续点击触发连击，10 连击触发 Perfect，15 连击触发 Unbelievable，都有专属音效。
+            连续点击触发连击，15 连击触发 Perfect，30 连击触发 Unbelievable，都有专属音效。
           </p>
 
           {best > 0 && (
