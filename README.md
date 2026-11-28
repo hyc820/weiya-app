@@ -9,6 +9,7 @@
 - 🎮 **闯关加分**：关主扫员工工号加分，防重复
 - 🏆 **实时排行榜**：按积分排名，自动刷新
 - 🎁 **密封竞标**：出价冻结积分，防超额出价
+- 💴 **数钱大作战**：全员手机同局，管理员发起与结算，实时大屏 + 名次积分奖励
 - ⚡ **高并发设计**：所有积分操作用数据库事务，100 人同时操作不崩溃
 - 👑 **多角色**：员工/关主/管理员权限分离
 
@@ -191,3 +192,38 @@ A: 当前版本需要管理员在后台点「立即结标」。如需自动，�
 
 **Q: 怎么加商品？**
 A: 管理员登录 → 后台 → 商品管理 → 新增商品。或直接在 Supabase Table Editor 的 `auction_items` 表里加。
+
+## 数钱大作战（正式版）
+
+- 员工端：首页 →「💴 数钱大作战」，或直接访问 `/weiya-app/money-game`（登录后可见）
+- 大屏：`/weiya-app/stage`（公开，无需登录；建议全屏并保持 1.5 秒轮询）
+- 管理员：后台 →「💴 热场游戏」→ 新建一局（20/30/60 秒、奖励区间）→ 开始游戏 → 时间到后「结算发奖」
+- 计分：同局每人只能提交一次，按「金额 → 最高连击 → 提交时间」排名，结算时按名次区间写积分流水
+- 数据库脚本：`supabase/migration_20261128_money_game.sql`
+- 原型页仍保留：`/weiya-app/money-demo`（单机试玩）、`/weiya-app/stage-demo`（模拟大屏），不计积分
+
+## 版本与回滚
+
+| 版本 | 说明 |
+| --- | --- |
+| `v1.0-proto-20261128`（tag） | 未整合热场游戏的原型版，`/money-demo`、`/stage-demo` 可用 |
+| `backup/pre-game`（分支） | 无游戏版本（d3d5b76），用于演示前兜底 |
+| 当前 main | 游戏正式版（真实数据、计入积分） |
+
+回滚方式（不 force push）：
+
+```bash
+# 方式一：保留历史，撤销整合提交
+git revert <整合提交的 commit id>
+GITHUB_PAGES=1 npx vite build --outDir docs --emptyOutDir
+cp docs/index.html docs/404.html && touch docs/.nojekyll
+git add docs && git commit -m "build: 回滚到无游戏版本" && git push
+
+# 方式二：基于备份分支重新构建
+git checkout backup/pre-game
+GITHUB_PAGES=1 npx vite build --outDir docs --emptyOutDir
+cp docs/index.html docs/404.html && touch docs/.nojekyll
+git add docs && git commit -m "build: 无游戏版本" && git push origin HEAD:main
+```
+
+说明：回滚只影响前端；已发放的游戏积分不会自动回收，如需清理请在数据库手动处理 `point_history` 与 `employees.current_points`。

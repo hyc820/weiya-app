@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase, db } from '../lib/supabase'
@@ -81,6 +81,29 @@ export default function Admin() {
   const [form, setForm] = useState({ name: '', base: '100', start: '', end: '', isBlind: false })
   const [message, setMessage] = useState('')
 
+  // ===== 热场游戏 =====
+  const [gameSessions, setGameSessions] = useState([])
+  const [gameCurrent, setGameCurrent] = useState(null)
+  const [gameTop, setGameTop] = useState([])
+  const [gameStats, setGameStats] = useState({ participant_count: 0, total_score: 0, max_combo: 0 })
+  const [gameBusy, setGameBusy] = useState(false)
+  const [gameForm, setGameForm] = useState({
+    title: '数钱大作战',
+    duration: 30,
+    rewards: [
+      { from: 1, to: 1, points: 300 },
+      { from: 2, to: 3, points: 200 },
+      { from: 4, to: 10, points: 100 }
+    ]
+  })
+
+  const GAME_STATUS = {
+    waiting: '待开始',
+    running: '进行中',
+    settled: '已结算',
+    cancelled: '已取消'
+  }
+
   const TYPE_LABEL = {
     checkin: '报到',
     game: '游戏',
@@ -95,6 +118,7 @@ export default function Admin() {
     { key: 'items', icon: '🎁', label: '商品管理', desc: '新增、结标、删除' },
     { key: 'games', icon: '🎮', label: '游戏记录', desc: '撤销加分' },
     { key: 'announcements', icon: '📢', label: '活动公告', desc: '编辑、隐藏' },
+    { key: 'money', icon: '💴', label: '热场游戏', desc: '发起、结算数钱' },
     { key: 'tools', icon: '🛠️', label: '维护工具', desc: '刷新排名、导入' },
     { key: 'records', icon: '📋', label: '积分记录', desc: '流水查询、导出' }
   ]
@@ -106,6 +130,7 @@ export default function Admin() {
     if (key === 'records') loadRecords()
     if (key === 'games') loadGameRecords()
     if (key === 'announcements') loadAnnouncements()
+    if (key === 'money') loadGameAdmin()
   }
 
   const showMsg = (msg) => {
@@ -223,6 +248,163 @@ export default function Admin() {
       showMsg('❌ ' + e.message)
     }
   }
+
+  // ===== 热场游戏 =====
+  const loadGameAdmin = async () => {
+    try {
+      const list = await db.getGameSessionsAdmin(employee.id)
+      setGameSessions(list)
+      const cur = list[0] || null
+      setGameCurrent(cur)
+      if (cur) {
+        const [top, stats] = await Promise.all([
+          db.getGameLeaderboard(cur.id, 10),
+          db.getGameStats(cur.id)
+        ])
+        setGameTop(top)
+        setGameStats(stats)
+      } else {
+        setGameTop([])
+        setGameStats({ participant_count: 0, total_score: 0, max_combo: 0 })
+      }
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    }
+  }
+
+  // 热场游戏页 2 秒轮询
+  useEffect(() => {
+    if (tab !== 'money') return
+    loadGameAdmin()
+    const timer = setInterval(loadGameAdmin, 2000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
+  const runGameAction = async (action, successPrefix, confirmText) => {
+    if (confirmText && !confirm(confirmText)) return
+    if (gameBusy) return
+    setGameBusy(true)
+    try {
+      const msg = await action()
+      showMsg('✅ ' + (successPrefix || '') + (msg || ''))
+      await loadGameAdmin()
+      loadEmployees()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    } finally {
+      setGameBusy(false)
+    }
+  }
+
+  const handleStartGame = () =>
+    runGameAction(
+      () => db.startGameSession(gameCurrent.id, employee.id),
+      '',
+      `确认开始「${gameCurrent.title}」？开始后全员手机进入 ${gameCurrent.duration_seconds} 秒倒计时。`
+    )
+
+  const handleEndGame = () =>
+    runGameAction(
+      () => db.endGameSession(gameCurrent.id, employee.id),
+      '',
+      '确认提前结束本局？所有人立即停止，随后可结算发奖。'
+    )
+
+  const handleSettleGame = () => {
+    const bands = (gameCurrent.rewards || [])
+      .map((r) => `第 ${r.from}-${r.to} 名 +${r.points} 分`)
+      .join('\n')
+    return runGameAction(
+      () => db.settleGameSession(gameCurrent.id, employee.id),
+      '',
+      `确认结算并发放积分？\n${bands || '（未配置奖励，不会发放积分）'}\n结算后不可重复发放。`
+    )
+  }
+
+  const handleCancelGame = () =>
+    runGameAction(
+      () => db.cancelGameSession(gameCurrent.id, employee.id),
+      '',
+      '确认取消本局？取消后不发放积分。'
+    )
+
+  const handleDeleteGame = (s) => {
+    const note =
+      s.status === 'settled'
+        ? '该局已结算，删除记录不会回收已发放的积分。'
+        : '该局成绩记录将一并删除。'
+    return runGameAction(
+      () => db.deleteGameSession(s.id, employee.id),
+      '',
+      `确认删除「${s.title}」？\n${note}\n删除后不可恢复。`
+    )
+  }
+
+  const copyGameConfig = (s) => {
+    setGameForm({
+      title: s.title,
+      duration: s.duration_seconds,
+      rewards: (s.rewards || []).map((r) => ({ from: r.from, to: r.to, points: r.points }))
+    })
+    showMsg('已复制配置，可在下方新建一局')
+  }
+
+  const handleCreateGame = async () => {
+    if (gameBusy) return
+    const title = gameForm.title.trim() || '数钱大作战'
+    const rewards = gameForm.rewards.map((r) => ({
+      from: Number(r.from),
+      to: Number(r.to),
+      points: Number(r.points)
+    }))
+    for (const r of rewards) {
+      if (!r.from || !r.to || r.from < 1 || r.to < r.from || r.points < 0) {
+        showMsg('❌ 奖励配置有误：名次需为正数，且结束名次不小于开始名次')
+        return
+      }
+    }
+    setGameBusy(true)
+    try {
+      await db.createGameSession(title, gameForm.duration, rewards, employee.id)
+      showMsg('✅ 已创建新一局，可在大屏和员工端看到')
+      loadGameAdmin()
+    } catch (e) {
+      showMsg('❌ ' + e.message)
+    } finally {
+      setGameBusy(false)
+    }
+  }
+
+  const updateReward = (idx, key, value) => {
+    setGameForm((f) => ({
+      ...f,
+      rewards: f.rewards.map((r, i) => (i === idx ? { ...r, [key]: value } : r))
+    }))
+  }
+
+  const addReward = () => {
+    setGameForm((f) => {
+      const last = f.rewards[f.rewards.length - 1]
+      const from = last ? Number(last.to) + 1 : 1
+      return { ...f, rewards: [...f.rewards, { from, to: from, points: 0 }] }
+    })
+  }
+
+  const removeReward = (idx) => {
+    setGameForm((f) => ({ ...f, rewards: f.rewards.filter((_, i) => i !== idx) }))
+  }
+
+  const gameRemaining = (s) => {
+    if (!s || s.status !== 'running' || !s.end_at) return 0
+    return Math.max(0, Math.ceil((new Date(s.end_at).getTime() - Date.now()) / 1000))
+  }
+
+  const rewardTotal = gameForm.rewards.reduce((sum, r) => {
+    const count = Math.max(0, (Number(r.to) || 0) - (Number(r.from) || 0) + 1)
+    return sum + count * (Number(r.points) || 0)
+  }, 0)
+  const rewardMaxSingle = Math.max(0, ...gameForm.rewards.map((r) => Number(r.points) || 0))
 
   // ===== 商品管理 =====
   const loadItems = async () => {
@@ -736,6 +918,277 @@ export default function Admin() {
         </>
       )}
 
+      {/* 热场游戏 */}
+      {tab === 'money' && (
+        <div style={{ padding: 12 }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => window.open(`${import.meta.env.BASE_URL}stage`, '_blank')}
+          >
+            🖥️ 打开大屏（新窗口）
+          </button>
+
+          {gameCurrent ? (
+            <div className="card" style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 700 }}>{gameCurrent.title}</div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                    {gameCurrent.duration_seconds} 秒 ·{' '}
+                    {new Date(gameCurrent.created_at).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+                <span
+                  className="badge"
+                  style={{
+                    background:
+                      gameCurrent.status === 'running' ? '#FF6B35' :
+                      gameCurrent.status === 'settled' ? '#2A9D8F' :
+                      gameCurrent.status === 'cancelled' ? '#999' : '#FFB703',
+                    color: 'white'
+                  }}
+                >
+                  {GAME_STATUS[gameCurrent.status] || gameCurrent.status}
+                </span>
+              </div>
+
+              {gameCurrent.status === 'running' && (
+                <div style={{ marginTop: 14, textAlign: 'center' }}>
+                  <div
+                    style={{
+                      fontSize: 44,
+                      fontWeight: 900,
+                      color: gameRemaining(gameCurrent) <= 5 ? '#E63946' : '#FF6B35',
+                      fontVariantNumeric: 'tabular-nums',
+                      lineHeight: 1.1
+                    }}
+                  >
+                    {gameRemaining(gameCurrent)}s
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999' }}>
+                    {gameRemaining(gameCurrent) > 0 ? '剩余时间' : '时间到，请结算发奖'}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, textAlign: 'center' }}>
+                <div style={{ flex: 1, background: '#fafafa', borderRadius: 8, padding: '8px 4px' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{Number(gameStats.participant_count || 0)}</div>
+                  <div style={{ fontSize: 11, color: '#999' }}>参与人数</div>
+                </div>
+                <div style={{ flex: 1, background: '#fafafa', borderRadius: 8, padding: '8px 4px' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>¥{Number(gameStats.total_score || 0).toLocaleString('zh-CN')}</div>
+                  <div style={{ fontSize: 11, color: '#999' }}>累计金额</div>
+                </div>
+                <div style={{ flex: 1, background: '#fafafa', borderRadius: 8, padding: '8px 4px' }}>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>x{Number(gameStats.max_combo || 0)}</div>
+                  <div style={{ fontSize: 11, color: '#999' }}>最高连击</div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: 12, color: '#666', lineHeight: 1.7, marginTop: 12 }}>
+                {(gameCurrent.rewards || []).length > 0
+                  ? gameCurrent.rewards.map((r) => `第 ${r.from}-${r.to} 名 +${r.points} 分`).join(' · ')
+                  : '未配置奖励'}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+                {gameCurrent.status === 'waiting' && (
+                  <button className="btn btn-success" style={{ flex: 1, minWidth: 120 }} disabled={gameBusy} onClick={handleStartGame}>
+                    ▶ 开始游戏
+                  </button>
+                )}
+                {gameCurrent.status === 'running' && (
+                  <>
+                    <button className="btn btn-danger" style={{ flex: 1, minWidth: 120 }} disabled={gameBusy} onClick={handleEndGame}>
+                      ⏹ 提前结束
+                    </button>
+                    <button className="btn btn-success" style={{ flex: 1, minWidth: 120 }} disabled={gameBusy} onClick={handleSettleGame}>
+                      💰 结算发奖
+                    </button>
+                  </>
+                )}
+                {(gameCurrent.status === 'waiting' || gameCurrent.status === 'cancelled') && (
+                  <button className="btn btn-outline" style={{ flex: 1, minWidth: 120 }} onClick={() => copyGameConfig(gameCurrent)}>
+                    复制配置
+                  </button>
+                )}
+                {gameCurrent.status === 'waiting' && (
+                  <button className="btn btn-outline" style={{ flex: 1, minWidth: 120 }} disabled={gameBusy} onClick={handleCancelGame}>
+                    取消本局
+                  </button>
+                )}
+                {gameCurrent.status === 'settled' && (
+                  <button className="btn btn-outline" style={{ flex: 1, minWidth: 120 }} onClick={() => copyGameConfig(gameCurrent)}>
+                    复制配置再来一局
+                  </button>
+                )}
+                <button
+                  className="btn btn-outline"
+                  style={{ flex: 1, minWidth: 120, color: '#E63946', borderColor: '#E63946' }}
+                  disabled={gameBusy}
+                  onClick={() => handleDeleteGame(gameCurrent)}
+                >
+                  删除记录
+                </button>
+              </div>
+
+              {gameTop.length > 0 && (
+                <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>实时前 10</div>
+                  {gameTop.map((p) => (
+                    <div key={p.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 13 }}>
+                      <span style={{ width: 22, color: '#999', fontWeight: 700 }}>{p.rank_no}</span>
+                      <span style={{ flex: 1 }}>
+                        {p.name}
+                        <span style={{ color: '#bbb', fontSize: 11, marginLeft: 6 }}>{p.department}</span>
+                      </span>
+                      <span style={{ color: '#FF6B35', fontWeight: 700 }}>¥{p.score.toLocaleString('zh-CN')}</span>
+                      <span style={{ color: '#999', width: 42, textAlign: 'right' }}>x{p.max_combo}</span>
+                      {p.reward_points > 0 && (
+                        <span style={{ color: '#2A9D8F', width: 52, textAlign: 'right' }}>+{p.reward_points}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="card" style={{ marginTop: 12, textAlign: 'center', color: '#999' }}>
+              还没有比赛，先在下方创建一局
+            </div>
+          )}
+
+          <div className="card">
+            <h3 style={{ fontSize: 16, marginBottom: 12 }}>新建一局</h3>
+
+            <label style={{ fontSize: 13, color: '#666' }}>标题</label>
+            <input
+              className="input"
+              value={gameForm.title}
+              onChange={(e) => setGameForm({ ...gameForm, title: e.target.value })}
+              placeholder="数钱大作战"
+            />
+
+            <label style={{ fontSize: 13, color: '#666' }}>时长</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              {[20, 30, 60].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className="btn"
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    fontSize: 13,
+                    background: gameForm.duration === d ? '#FF6B35' : '#f0f0f0',
+                    color: gameForm.duration === d ? 'white' : '#333'
+                  }}
+                  onClick={() => setGameForm({ ...gameForm, duration: d })}
+                >
+                  {d} 秒
+                </button>
+              ))}
+            </div>
+
+            <label style={{ fontSize: 13, color: '#666' }}>奖励配置（按名次区间）</label>
+            {gameForm.rewards.map((r, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 12, color: '#999' }}>第</span>
+                <input
+                  className="input"
+                  type="number"
+                  inputMode="numeric"
+                  style={{ marginBottom: 0, width: 56 }}
+                  value={r.from}
+                  onChange={(e) => updateReward(idx, 'from', e.target.value)}
+                />
+                <span style={{ fontSize: 12, color: '#999' }}>-</span>
+                <input
+                  className="input"
+                  type="number"
+                  inputMode="numeric"
+                  style={{ marginBottom: 0, width: 56 }}
+                  value={r.to}
+                  onChange={(e) => updateReward(idx, 'to', e.target.value)}
+                />
+                <span style={{ fontSize: 12, color: '#999' }}>名 +</span>
+                <input
+                  className="input"
+                  type="number"
+                  inputMode="numeric"
+                  style={{ marginBottom: 0, flex: 1 }}
+                  value={r.points}
+                  onChange={(e) => updateReward(idx, 'points', e.target.value)}
+                />
+                <span style={{ fontSize: 12, color: '#999' }}>分</span>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ width: 'auto', padding: '4px 8px', fontSize: 12, color: '#E63946', borderColor: '#E63946' }}
+                  onClick={() => removeReward(idx)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ padding: 8, fontSize: 13, marginTop: 4 }}
+              onClick={addReward}
+            >
+              + 添加奖励档位
+            </button>
+
+            <div style={{ fontSize: 12, color: '#666', margin: '10px 0', lineHeight: 1.6 }}>
+              最高单人 <b style={{ color: '#FF6B35' }}>{rewardMaxSingle}</b> 分 · 全部发放合计{' '}
+              <b style={{ color: '#FF6B35' }}>{rewardTotal}</b> 分
+            </div>
+
+            <button className="btn btn-success" disabled={gameBusy} onClick={handleCreateGame}>
+              {gameBusy ? '处理中…' : '创建比赛'}
+            </button>
+          </div>
+
+          <div className="card">
+            <h3 style={{ fontSize: 16, marginBottom: 10 }}>历史记录</h3>
+            {gameSessions.length === 0 && (
+              <p style={{ textAlign: 'center', color: '#999', padding: 12 }}>暂无记录</p>
+            )}
+            {gameSessions.map((s) => (
+              <div className="list-item" key={s.id}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {s.title}
+                    <span style={{ fontSize: 11, marginLeft: 6, color: '#999' }}>
+                      {GAME_STATUS[s.status] || s.status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                    {s.duration_seconds} 秒 · {Number(s.participant_count)} 人 · 最高 ¥{Number(s.top_score).toLocaleString('zh-CN')} ·{' '}
+                    {new Date(s.created_at).toLocaleString('zh-CN')}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <button
+                    className="btn btn-outline"
+                    style={{ width: 'auto', padding: '5px 10px', fontSize: 12 }}
+                    onClick={() => copyGameConfig(s)}
+                  >复制</button>
+                  <button
+                    className="btn btn-outline"
+                    style={{ width: 'auto', padding: '5px 10px', fontSize: 12, color: '#E63946', borderColor: '#E63946' }}
+                    disabled={gameBusy}
+                    onClick={() => handleDeleteGame(s)}
+                  >删除</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 工具 */}
       {tab === 'tools' && (
         <div className="card">
@@ -743,13 +1196,14 @@ export default function Admin() {
             🔄 刷新排行榜排名
           </button>
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
-            <h4 style={{ fontSize: 15, marginBottom: 8 }}>🎮 热场游戏原型</h4>
+            <h4 style={{ fontSize: 15, marginBottom: 8 }}>💴 数钱大作战</h4>
             <p style={{ fontSize: 12, color: '#999', lineHeight: 1.6, marginBottom: 10 }}>
-              仅用于预览数钱游戏的玩法和大屏效果，使用模拟数据，不计积分。
+              已整合为正式版：在「热场游戏」中创建并发起，员工从首页进入，大屏打开 /stage。
+              原型页 /money-demo 与 /stage-demo 仍保留，可用于演示或回滚。
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <a
-                href="/money-demo"
+                href={`${import.meta.env.BASE_URL}money-game`}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -763,10 +1217,10 @@ export default function Admin() {
                   textDecoration: 'none'
                 }}
               >
-                员工端预览
+                员工端入口
               </a>
               <a
-                href="/stage-demo"
+                href={`${import.meta.env.BASE_URL}stage`}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -780,7 +1234,7 @@ export default function Admin() {
                   textDecoration: 'none'
                 }}
               >
-                大屏预览
+                大屏入口
               </a>
             </div>
           </div>

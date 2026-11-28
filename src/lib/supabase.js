@@ -158,5 +158,127 @@ export const db = {
     })
     if (error) throw error
     return data
+  },
+
+  // ===== 数钱大作战（热场游戏） =====
+
+  // 创建一局（管理员）
+  createGameSession: async (title, duration, rewards, operatorId) => {
+    const { data, error } = await supabase.rpc('create_game_session', {
+      p_title: title,
+      p_duration: duration,
+      p_rewards: rewards,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 开始（管理员）
+  startGameSession: async (sessionId, operatorId) => {
+    const { data, error } = await supabase.rpc('start_game_session', {
+      p_session_id: sessionId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 提前结束（管理员）
+  endGameSession: async (sessionId, operatorId) => {
+    const { data, error } = await supabase.rpc('end_game_session', {
+      p_session_id: sessionId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 结算发奖（管理员，幂等）
+  settleGameSession: async (sessionId, operatorId) => {
+    const { data, error } = await supabase.rpc('settle_game_session', {
+      p_session_id: sessionId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 取消（管理员）
+  cancelGameSession: async (sessionId, operatorId) => {
+    const { data, error } = await supabase.rpc('cancel_game_session', {
+      p_session_id: sessionId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 删除（管理员）
+  deleteGameSession: async (sessionId, operatorId) => {
+    const { data, error } = await supabase.rpc('delete_game_session', {
+      p_session_id: sessionId,
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data
+  },
+
+  // 当前/最近一局（含服务器时间，公开）
+  getCurrentGameSession: async () => {
+    const { data, error } = await supabase.rpc('get_current_game_session')
+    if (error) throw error
+    return (data && data[0]) || null
+  },
+
+  // 实时榜单（公开）
+  getGameLeaderboard: async (sessionId, limit = 20) => {
+    const { data, error } = await supabase.rpc('get_game_leaderboard', {
+      p_session_id: sessionId,
+      p_limit: limit
+    })
+    if (error) throw error
+    return data || []
+  },
+
+  // 本局统计（公开）
+  getGameStats: async (sessionId) => {
+    const { data, error } = await supabase.rpc('get_game_stats', {
+      p_session_id: sessionId
+    })
+    if (error) throw error
+    return (data && data[0]) || { participant_count: 0, total_score: 0, max_combo: 0 }
+  },
+
+  // 提交成绩
+  submitGameScore: async (sessionId, employeeId, score, taps, maxCombo) => {
+    const { data, error } = await supabase.rpc('submit_game_score', {
+      p_session_id: sessionId,
+      p_employee_id: employeeId,
+      p_score: score,
+      p_taps: taps,
+      p_max_combo: maxCombo
+    })
+    if (error) throw error
+    return (data && data[0]) || null
+  },
+
+  // 我的本局结果
+  getMyGameResult: async (sessionId, employeeId) => {
+    const { data, error } = await supabase.rpc('get_my_game_result', {
+      p_session_id: sessionId,
+      p_employee_id: employeeId
+    })
+    if (error) throw error
+    return (data && data[0]) || null
+  },
+
+  // 管理员比赛列表
+  getGameSessionsAdmin: async (operatorId) => {
+    const { data, error } = await supabase.rpc('get_game_sessions_admin', {
+      p_operator_id: operatorId
+    })
+    if (error) throw error
+    return data || []
   }
 }

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { db } from '../lib/supabase'
 
-const DURATION = 30
+const DEMO_DURATION = 30
 const NOTE_STYLES = {
   1: { bg: 'linear-gradient(135deg,#7ED957,#3FA34D)', color: '#0B3D1C' },
   5: { bg: 'linear-gradient(135deg,#C9A6FF,#8E5CF7)', color: '#2B1259' },
@@ -15,28 +17,46 @@ function formatMoney(n) {
   return n.toLocaleString('zh-CN')
 }
 
-export default function MoneyGame() {
-  const [phase, setPhase] = useState('idle')
+export default function MoneyGame({ live = false }) {
+  const { employee } = useAuth()
+  const [phase, setPhase] = useState(live ? 'loading' : 'idle')
   const [countdown, setCountdown] = useState(3)
   const [score, setScore] = useState(0)
   const [combo, setCombo] = useState(0)
   const [maxCombo, setMaxCombo] = useState(0)
-  const [remaining, setRemaining] = useState(DURATION)
+  const [duration, setDuration] = useState(DEMO_DURATION)
+  const [remaining, setRemaining] = useState(DEMO_DURATION)
   const [bills, setBills] = useState([])
   const [floats, setFloats] = useState([])
   const [milestone, setMilestone] = useState(null)
   const [muted, setMuted] = useState(() => localStorage.getItem('mg_muted') === '1')
   const [best, setBest] = useState(() => Number(localStorage.getItem('mg_best') || 0))
 
+  // ===== 正式对局状态 =====
+  const [session, setSession] = useState(null)
+  const [myResult, setMyResult] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
   const idRef = useRef(1)
   const startAtRef = useRef(0)
   const scoreRef = useRef(0)
   const comboRef = useRef(0)
   const maxComboRef = useRef(0)
+  const tapsRef = useRef(0)
   const lastTapRef = useRef(0)
   const audioRef = useRef(null)
   const spawnTimerRef = useRef(null)
   const milestoneTimerRef = useRef(null)
+  const phaseRef = useRef(phase)
+  const sessionRef = useRef(null)
+  const deadlineRef = useRef(0) // 本机时间戳：本局结束时刻
+  const submittedRef = useRef(false)
+  const playedRef = useRef(false)
+
+  useEffect(() => {
+    phaseRef.current = phase
+  }, [phase])
 
   // ===== 音效 =====
   const ensureAudio = () => {
@@ -218,26 +238,185 @@ export default function MoneyGame() {
     localStorage.setItem('mg_muted', muted ? '1' : '0')
   }, [muted])
 
-  const startGame = () => {
-    ensureAudio()
+  const resetPlayState = () => {
     scoreRef.current = 0
     comboRef.current = 0
     maxComboRef.current = 0
+    tapsRef.current = 0
     lastTapRef.current = 0
     setScore(0)
     setCombo(0)
     setMaxCombo(0)
-    setRemaining(DURATION)
     setBills([])
     setFloats([])
     setMilestone(null)
+  }
+
+  // 演示模式：本机直接开始
+  const startGame = () => {
+    ensureAudio()
+    resetPlayState()
+    setDuration(DEMO_DURATION)
+    setRemaining(DEMO_DURATION)
     setCountdown(3)
     setPhase('countdown')
   }
 
+  // 正式对局：按服务器剩余时间开始
+  const beginLive = (s, remain) => {
+    if (!s || remain <= 0) return
+    ensureAudio()
+    sessionRef.current = s
+    submittedRef.current = false
+    playedRef.current = true
+    resetPlayState()
+    const d = s.duration_seconds || DEMO_DURATION
+    setDuration(d)
+    setRemaining(remain)
+    deadlineRef.current = Date.now() + remain * 1000
+    setSubmitError('')
+    if (remain > 3) {
+      setCountdown(3)
+      setPhase('countdown')
+    } else {
+      setPhase('playing')
+    }
+  }
+
+  const refreshMyResult = async (s) => {
+    if (!s || !employee) return
+    try {
+      const mine = await db.getMyGameResult(s.id, employee.id)
+      if (mine) setMyResult(mine)
+    } catch {
+      // 忽略
+    }
+  }
+
+  const submitScore = async () => {
+    const s = sessionRef.current
+    if (!s || !employee || submittedRef.current || !playedRef.current) return
+    submittedRef.current = true
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const res = await db.submitGameScore(s.id, employee.id, scoreRef.current, tapsRef.current, maxComboRef.current)
+      if (res) {
+        setMyResult({
+          rank_no: res.rank_no,
+          score: res.score,
+          max_combo: maxComboRef.current,
+          total_players: res.total_players,
+          reward_points: 0
+        })
+      }
+      refreshMyResult(s)
+    } catch (e) {
+      setSubmitError(e.message)
+      refreshMyResult(s)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ===== 正式对局：拉取当前比赛 =====
+  useEffect(() => {
+    if (!live || !employee) return
+    let cancelled = false
+
+    const poll = async () => {
+      if (cancelled) return
+      const current = phaseRef.current
+      if (current === 'playing' || current === 'countdown') return
+      if (current === 'ended' && submittedRef.current) return
+
+      try {
+        const s = await db.getCurrentGameSession()
+        if (cancelled) return
+        if (!s) {
+          setSession(null)
+          sessionRef.current = null
+          setPhase('waiting')
+          return
+        }
+        sessionRef.current = s
+        setSession(s)
+
+        if (s.status === 'waiting') {
+          setPhase('waiting')
+          return
+        }
+        if (s.status === 'cancelled') {
+          setPhase('cancelled')
+          return
+        }
+        if (s.status === 'running') {
+          const endLocal = new Date(s.end_at).getTime()
+          const remain = Math.max(0, Math.ceil((endLocal - Date.now()) / 1000))
+          if (remain <= 0) {
+            await refreshMyResult(s)
+            if (!cancelled) setPhase('ended')
+            return
+          }
+          const mine = await db.getMyGameResult(s.id, employee.id)
+          if (cancelled) return
+          if (mine) {
+            setMyResult(mine)
+            submittedRef.current = true
+            setPhase('ended')
+            return
+          }
+          beginLive(s, remain)
+          return
+        }
+        if (s.status === 'settled') {
+          const mine = await db.getMyGameResult(s.id, employee.id)
+          if (cancelled) return
+          setMyResult(mine || null)
+          setPhase('ended')
+        }
+      } catch {
+        // 网络抖动时忽略，下一轮再试
+      }
+    }
+
+    poll()
+    const timer = setInterval(poll, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, employee?.id])
+
+  // 结束后轮询结算结果（奖励积分）
+  useEffect(() => {
+    if (!live || phase !== 'ended') return
+    const s = sessionRef.current
+    if (!s) return
+    const timer = setInterval(() => refreshMyResult(s), 3000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, phase])
+
   // 倒计时
   useEffect(() => {
     if (phase !== 'countdown') return
+    if (live) {
+      const left = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000))
+      if (left <= 0) {
+        setPhase('ended')
+        return
+      }
+      if (countdown <= 0) {
+        setPhase('playing')
+        return
+      }
+      setRemaining(left)
+      tone(countdown === 1 ? 760 : 540, 0.1, 'square', 0.05)
+      const t = setTimeout(() => setCountdown((c) => c - 1), 800)
+      return () => clearTimeout(t)
+    }
     if (countdown <= 0) {
       setPhase('playing')
       return
@@ -251,8 +430,9 @@ export default function MoneyGame() {
   // 计时
   useEffect(() => {
     if (phase !== 'playing') return
-    startAtRef.current = Date.now()
-    const end = Date.now() + DURATION * 1000
+    const totalMs = duration * 1000
+    const end = live ? deadlineRef.current : Date.now() + totalMs
+    startAtRef.current = end - totalMs
     tone(1040, 0.2, 'sine', 0.08)
     tone(1320, 0.2, 'sine', 0.05, 0.09)
     const t = setInterval(() => {
@@ -291,7 +471,7 @@ export default function MoneyGame() {
         (elapsed >= 6 && elapsed < 8.5) ||
         (elapsed >= 13 && elapsed < 16) ||
         (elapsed >= 21 && elapsed < 24) ||
-        elapsed >= 25
+        elapsed >= duration - 5
 
       setBills((prev) => {
         if (prev.length >= (rush ? 16 : 11)) return prev
@@ -312,7 +492,7 @@ export default function MoneyGame() {
             roll < 0.44 ? 10 :
             roll < 0.7 ? 5 : 1
         }
-        const duration =
+        const fall =
           value === 100 ? 1.7 :
           value === 50 ? 2.1 :
           value === 20 ? 2.4 :
@@ -323,7 +503,7 @@ export default function MoneyGame() {
             id: idRef.current++,
             left: 2 + Math.random() * 82,
             value,
-            duration: duration + Math.random() * 0.5,
+            duration: fall + Math.random() * 0.5,
             drift: (Math.random() - 0.5) * 180
           }
         ]
@@ -338,12 +518,16 @@ export default function MoneyGame() {
       cancelled = true
       clearTimeout(spawnTimerRef.current)
     }
-  }, [phase])
+  }, [phase, duration])
 
   // 结束音效与成绩
   useEffect(() => {
     if (phase !== 'ended') return
     ;[880, 740, 620].forEach((f, i) => tone(f, 0.2, 'sine', 0.07, i * 0.15))
+    if (live) {
+      if (playedRef.current) submitScore()
+      return
+    }
     if (scoreRef.current > best) {
       setBest(scoreRef.current)
       localStorage.setItem('mg_best', String(scoreRef.current))
@@ -366,6 +550,7 @@ export default function MoneyGame() {
     const nextCombo = now - lastTapRef.current < 850 ? comboRef.current + 1 : 1
     lastTapRef.current = now
     comboRef.current = nextCombo
+    tapsRef.current += 1
     if (nextCombo > maxComboRef.current) {
       maxComboRef.current = nextCombo
       setMaxCombo(nextCombo)
@@ -516,7 +701,7 @@ export default function MoneyGame() {
             <div
               style={{
                 height: '100%',
-                width: `${(remaining / DURATION) * 100}%`,
+                width: `${Math.min(100, (remaining / duration) * 100)}%`,
                 background: 'linear-gradient(90deg,#FFD166,#FF6B35)',
                 borderRadius: 2,
                 transition: 'width .2s linear'
@@ -667,6 +852,86 @@ export default function MoneyGame() {
         </div>
       )}
 
+      {phase === 'loading' && (
+        <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.7 }}>
+          正在读取本局…
+        </div>
+      )}
+
+      {phase === 'waiting' && (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 24 }}>
+          <div style={{ fontSize: 13, color: '#FFD166', letterSpacing: 4, marginBottom: 10 }}>尾牙热场</div>
+          {session ? (
+            <>
+              <h1 style={{ fontSize: 40, lineHeight: 1.2, marginBottom: 10 }}>{session.title}</h1>
+              <div style={{ fontSize: 15, color: 'rgba(255,255,255,.75)', lineHeight: 1.9 }}>
+                时长 {session.duration_seconds} 秒
+              </div>
+              <div
+                style={{
+                  marginTop: 26,
+                  padding: '18px 20px',
+                  borderRadius: 14,
+                  background: 'rgba(255,209,102,.12)',
+                  border: '1px solid rgba(255,209,102,.35)',
+                  fontSize: 15,
+                  lineHeight: 1.8
+                }}
+              >
+                等待主持人开始…<br />
+                开始后手机会自动进入倒计时，请保持此页面打开。
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 style={{ fontSize: 36, lineHeight: 1.25, marginBottom: 10 }}>
+                暂无进行中的<br />数钱大作战
+              </h1>
+              <div style={{ fontSize: 14, color: 'rgba(255,255,255,.65)', lineHeight: 1.9 }}>
+                主持人发起比赛后，这里会自动进入游戏。
+              </div>
+            </>
+          )}
+          <Link
+            to="/"
+            style={{
+              marginTop: 26,
+              padding: '14px',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,.25)',
+              color: '#fff',
+              textAlign: 'center',
+              textDecoration: 'none',
+              fontSize: 15
+            }}
+          >
+            返回首页
+          </Link>
+        </div>
+      )}
+
+      {phase === 'cancelled' && (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 24 }}>
+          <h1 style={{ fontSize: 32, marginBottom: 12 }}>本局已取消</h1>
+          <div style={{ fontSize: 14, color: 'rgba(255,255,255,.65)' }}>等待主持人发起下一局。</div>
+          <Link
+            to="/"
+            style={{
+              marginTop: 26,
+              padding: '14px',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,.25)',
+              color: '#fff',
+              textAlign: 'center',
+              textDecoration: 'none',
+              fontSize: 15
+            }}
+          >
+            返回首页
+          </Link>
+        </div>
+      )}
+
       {phase === 'idle' && (
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 24 }}>
           <div style={{ fontSize: 13, color: '#FFD166', letterSpacing: 4, marginBottom: 8 }}>尾牙热场</div>
@@ -674,7 +939,7 @@ export default function MoneyGame() {
             数钱<br />大作战
           </h1>
           <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>
-            {DURATION} 秒内狂点掉落的钞票，面额越大得分越高。<br />
+            {DEMO_DURATION} 秒内狂点掉落的钞票，面额越大得分越高。<br />
             中间会有三波钞票雨，最后 5 秒全面加速。<br />
             连续点击触发连击，15 连击开启 1.5 倍并提示 Perfect，30 连击开启 2 倍并提示 Unbelievable。
           </p>
@@ -711,7 +976,92 @@ export default function MoneyGame() {
         </div>
       )}
 
-      {phase === 'ended' && (
+      {phase === 'ended' && live && (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 24 }}>
+          <div style={{ fontSize: 13, color: '#FFD166', letterSpacing: 4, marginBottom: 10 }}>本局结束</div>
+
+          {myResult || score > 0 ? (
+            <>
+              <div style={{ fontSize: 64, fontWeight: 900, color: '#FFD166', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                ¥{formatMoney(myResult ? myResult.score : score)}
+              </div>
+              <div style={{ marginTop: 8, color: 'rgba(255,255,255,.7)', fontSize: 15 }}>
+                最高连击 x{myResult ? myResult.max_combo : maxCombo}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'rgba(255,255,255,.75)' }}>你未参与本局</div>
+          )}
+
+          {myResult ? (
+            <div
+              style={{
+                marginTop: 18,
+                padding: '16px 18px',
+                borderRadius: 14,
+                background: 'rgba(255,209,102,.12)',
+                border: '1px solid rgba(255,209,102,.35)'
+              }}
+            >
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#FFD166' }}>
+                第 {myResult.rank_no} 名
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'rgba(255,255,255,.65)', marginLeft: 8 }}>
+                  共 {Number(myResult.total_players)} 人
+                </span>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 14, color: 'rgba(255,255,255,.8)' }}>
+                {myResult.reward_points > 0
+                  ? `🎉 获得 +${myResult.reward_points} 积分`
+                  : Number(sessionRef.current?.status === 'settled' || session?.status === 'settled')
+                    ? '本局未获得积分奖励'
+                    : '等待主持人结算发奖…'}
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 18, fontSize: 15, color: 'rgba(255,255,255,.7)', lineHeight: 1.8 }}>
+              {submitting
+                ? '成绩提交中…'
+                : submitError
+                  ? `成绩未提交：${submitError}`
+                  : '本局已结束，你未参与本局。'}
+            </div>
+          )}
+
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 26,
+              padding: '16px',
+              borderRadius: 12,
+              border: 'none',
+              background: 'linear-gradient(135deg,#FFD166,#FF8F1F)',
+              color: '#3A1600',
+              fontSize: 18,
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            刷新查看结算
+          </button>
+          <Link
+            to="/"
+            style={{
+              marginTop: 12,
+              padding: '14px',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,.25)',
+              color: '#fff',
+              textAlign: 'center',
+              textDecoration: 'none',
+              fontSize: 15
+            }}
+          >
+            返回首页
+          </Link>
+        </div>
+      )}
+
+      {phase === 'ended' && !live && (
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 24 }}>
           <div style={{ fontSize: 13, color: '#FFD166', letterSpacing: 4, marginBottom: 10 }}>本局结束</div>
           <div style={{ fontSize: 64, fontWeight: 900, color: '#FFD166', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>

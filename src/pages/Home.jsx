@@ -1,19 +1,34 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { supabase, db } from '../lib/supabase'
 
 export default function Home() {
   const { employee, logout, refreshEmployee } = useAuth()
   const navigate = useNavigate()
   const [announcements, setAnnouncements] = useState([])
+  const [gameStatus, setGameStatus] = useState(null)
 
   useEffect(() => {
     refreshEmployee()
     loadAnnouncements()
+    loadGameStatus()
     const timer = setInterval(refreshEmployee, 30000)
-    return () => clearInterval(timer)
+    const gameTimer = setInterval(loadGameStatus, 15000)
+    return () => {
+      clearInterval(timer)
+      clearInterval(gameTimer)
+    }
   }, [])
+
+  const loadGameStatus = async () => {
+    try {
+      const s = await db.getCurrentGameSession()
+      setGameStatus(s?.status || null)
+    } catch {
+      // 忽略
+    }
+  }
 
   const loadAnnouncements = async () => {
     const { data } = await supabase
@@ -67,6 +82,60 @@ export default function Home() {
       <div style={{ margin: '0 12px 12px' }}>
         <button className="btn btn-primary" onClick={() => navigate('/my-qr')}>
           🔳 我的二维码（出示给关主加分）
+        </button>
+      </div>
+
+      {/* 热场游戏入口 */}
+      <div style={{ margin: '0 12px 12px' }}>
+        <button
+          className="btn"
+          style={{
+            width: '100%',
+            padding: '14px',
+            borderRadius: 10,
+            border: 'none',
+            background: 'linear-gradient(135deg, #FFD166, #FF8F1F)',
+            color: '#3A1600',
+            fontSize: 16,
+            fontWeight: 800,
+            cursor: 'pointer',
+            position: 'relative'
+          }}
+          onClick={() => navigate('/money-game')}
+        >
+          💴 数钱大作战
+          {gameStatus === 'running' && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                background: '#E63946',
+                color: 'white',
+                padding: '2px 8px',
+                borderRadius: 999,
+                verticalAlign: 'middle'
+              }}
+            >
+              进行中
+            </span>
+          )}
+          {gameStatus === 'waiting' && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                background: 'rgba(58,22,0,.18)',
+                color: '#3A1600',
+                padding: '2px 8px',
+                borderRadius: 999,
+                verticalAlign: 'middle'
+              }}
+            >
+              即将开始
+            </span>
+          )}
         </button>
       </div>
 
