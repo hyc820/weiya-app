@@ -263,7 +263,7 @@ export default function MoneyGame({ live = false }) {
   }
 
   // 正式对局：按服务器剩余时间开始
-  const beginLive = (s, remain) => {
+  const beginLive = (s, remain, endLocal) => {
     if (!s || remain <= 0) return
     ensureAudio()
     sessionRef.current = s
@@ -273,7 +273,7 @@ export default function MoneyGame({ live = false }) {
     const d = s.duration_seconds || DEMO_DURATION
     setDuration(d)
     setRemaining(remain)
-    deadlineRef.current = Date.now() + remain * 1000
+    deadlineRef.current = endLocal || Date.now() + remain * 1000
     setSubmitError('')
     if (remain > 3) {
       setCountdown(3)
@@ -351,7 +351,8 @@ export default function MoneyGame({ live = false }) {
           return
         }
         if (s.status === 'running') {
-          const endLocal = new Date(s.end_at).getTime()
+          const offset = new Date(s.server_now).getTime() - Date.now()
+          const endLocal = new Date(s.end_at).getTime() - offset
           const remain = Math.max(0, Math.ceil((endLocal - Date.now()) / 1000))
           if (remain <= 0) {
             await refreshMyResult(s)
@@ -366,7 +367,7 @@ export default function MoneyGame({ live = false }) {
             setPhase('ended')
             return
           }
-          beginLive(s, remain)
+          beginLive(s, remain, endLocal)
           return
         }
         if (s.status === 'settled') {
