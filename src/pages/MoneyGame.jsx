@@ -53,7 +53,7 @@ export default function MoneyGame() {
     }
   }
 
-  const tone = (freq, duration = 0.07, type = 'sine', volume = 0.06, delay = 0) => {
+  const tone = (freq, duration = 0.07, type = 'sine', volume = 0.06, delay = 0, glideTo = 0) => {
     if (muted) return
     const ctx = ensureAudio()
     if (!ctx) return
@@ -63,6 +63,9 @@ export default function MoneyGame() {
       const gain = ctx.createGain()
       osc.type = type
       osc.frequency.setValueAtTime(freq, t0)
+      if (glideTo > 0) {
+        osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + duration)
+      }
       gain.gain.setValueAtTime(0.0001, t0)
       gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.012)
       gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration)
@@ -81,10 +84,10 @@ export default function MoneyGame() {
     try {
       window.speechSynthesis.cancel()
       const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'zh-CN'
-      u.rate = 1.02
-      u.pitch = 1.18
-      u.volume = 0.95
+      u.lang = 'en-US'
+      u.rate = 1.05
+      u.pitch = 1.3
+      u.volume = 1
       window.speechSynthesis.speak(u)
     } catch {
       // 忽略语音异常
@@ -257,19 +260,23 @@ export default function MoneyGame() {
     setScore(scoreRef.current)
 
     if (!muted) {
-      const pitch = 660 + Math.min(nextCombo, 30) * 22
-      tone(pitch, 0.055, 'triangle', bill.value >= 50 ? 0.075 : 0.05)
+      const pitch = 900 + Math.min(nextCombo, 30) * 26
+      // 向上滑音的“啵”声，接近消消乐的点击反馈
+      tone(pitch, 0.065, 'sine', bill.value >= 50 ? 0.075 : 0.055, 0, pitch * 1.55)
+      tone(pitch * 2.1, 0.03, 'triangle', 0.018, 0.005)
     }
     if (navigator.vibrate) navigator.vibrate(bill.value >= 50 ? 18 : 8)
 
     if (nextCombo === 10) {
-      ;[660, 880, 1100].forEach((f, i) => tone(f, 0.14, 'sine', 0.08, i * 0.08))
-      speak('优秀')
-      showMilestone('优秀！', '#FFD166')
+      ;[784, 988, 1319].forEach((f, i) => tone(f, 0.17, 'sine', 0.09, i * 0.07))
+      tone(2093, 0.12, 'triangle', 0.035, 0.22)
+      setTimeout(() => speak('Perfect!'), 90)
+      showMilestone('Perfect!', '#FFD166')
     } else if (nextCombo === 15) {
-      ;[660, 880, 1100, 1320].forEach((f, i) => tone(f, 0.15, 'sine', 0.09, i * 0.075))
-      speak('不可思议')
-      showMilestone('不可思议！', '#FF6B9D')
+      ;[784, 988, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.16, 'sine', 0.09, i * 0.065))
+      tone(2637, 0.14, 'triangle', 0.03, 0.34)
+      setTimeout(() => speak('Unbelievable!'), 90)
+      showMilestone('Unbelievable!', '#FF6B9D')
     }
 
     const id = idRef.current++
@@ -460,7 +467,7 @@ export default function MoneyGame() {
                 top: '30%',
                 left: '50%',
                 transform: 'translateX(-50%)',
-                fontSize: 44,
+                fontSize: milestone.text.length > 8 ? 30 : 46,
                 fontWeight: 900,
                 color: milestone.color,
                 textShadow: `0 0 30px ${milestone.color}`,
@@ -553,7 +560,7 @@ export default function MoneyGame() {
           <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>
             {DURATION} 秒内狂点掉落的钞票，面额越大得分越高。<br />
             中间会有三波钞票雨，最后 5 秒全面加速。<br />
-            连续点击触发连击，10 连击和 15 连击有额外奖励音效。
+            连续点击触发连击，10 连击触发 Perfect，15 连击触发 Unbelievable，都有专属音效。
           </p>
 
           {best > 0 && (
