@@ -529,16 +529,17 @@ export default function MoneyGame() {
               key={combo}
               style={{
                 position: 'absolute',
-                top: 4,
+                top: 54,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                padding: '3px 12px 5px',
+                padding: '3px 11px 5px',
                 borderRadius: 999,
                 background: 'rgba(255,209,102,.18)',
                 border: '1px solid rgba(255,209,102,.5)',
                 color: '#FFD166',
                 fontWeight: 800,
-                fontSize: 12.5,
+                fontSize: 12,
+                whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 zIndex: 6
               }}
