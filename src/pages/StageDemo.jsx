@@ -31,12 +31,14 @@ export default function StageDemo() {
   const [countdown, setCountdown] = useState(3)
   const [remaining, setRemaining] = useState(DURATION)
   const [scores, setScores] = useState(() => PLAYERS.map(() => 0))
+  const [combos, setCombos] = useState(() => PLAYERS.map(() => 0))
   const [participants, setParticipants] = useState(102)
   const [confetti, setConfetti] = useState([])
   const idRef = useRef(1)
 
   const start = () => {
     setScores(PLAYERS.map(() => 0))
+    setCombos(PLAYERS.map(() => 0))
     setParticipants(102)
     setRemaining(DURATION)
     setConfetti([])
@@ -71,6 +73,9 @@ export default function StageDemo() {
         })
       )
       setParticipants((p) => (p < 118 && Math.random() < 0.35 ? p + 1 : p))
+      setCombos((prev) =>
+        prev.map((c) => (Math.random() < 0.35 ? c + 1 + Math.floor(Math.random() * 2) : c))
+      )
     }, 320)
 
     return () => {
@@ -92,11 +97,12 @@ export default function StageDemo() {
     setConfetti(list)
   }, [phase])
 
-  const ranked = PLAYERS.map((p, i) => ({ ...p, score: scores[i] || 0 }))
+  const ranked = PLAYERS.map((p, i) => ({ ...p, score: scores[i] || 0, combo: combos[i] || 0 }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 10)
   const maxScore = Math.max(1, ranked[0]?.score || 0)
   const totalScore = scores.reduce((a, b) => a + b, 0)
+  const maxCombo = Math.max(0, ...combos)
 
   return (
     <div className="st-root">
@@ -246,6 +252,12 @@ export default function StageDemo() {
               </b>
             </div>
             <div>
+              <span style={{ opacity: 0.55 }}>最高连击 </span>
+              <b style={{ fontSize: 'clamp(22px,2.2vw,36px)', color: '#FFD166', fontVariantNumeric: 'tabular-nums' }}>
+                x{maxCombo}
+              </b>
+            </div>
+            <div>
               <span style={{ opacity: 0.55 }}>当前第一 </span>
               <b style={{ fontSize: 'clamp(22px,2.2vw,36px)' }}>{ranked[0]?.name || '—'}</b>
             </div>
@@ -281,7 +293,14 @@ export default function StageDemo() {
                 </div>
                 <div style={{ width: 'clamp(100px,11vw,190px)' }}>
                   <div style={{ fontSize: 'clamp(16px,1.5vw,26px)', fontWeight: 700 }}>{p.name}</div>
-                  <div style={{ fontSize: 'clamp(10px,.85vw,14px)', opacity: 0.5 }}>{p.dept}</div>
+                  <div style={{ fontSize: 'clamp(10px,.85vw,14px)', opacity: 0.5 }}>
+                    {p.dept}
+                    {p.combo >= 5 && (
+                      <span style={{ marginLeft: 8, color: '#FF8FA3', fontWeight: 700 }}>
+                        🔥x{p.combo}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div style={{ flex: 1, height: 'clamp(10px,1.2vh,18px)', background: 'rgba(255,255,255,.07)', borderRadius: 999 }}>
                   <div className="st-bar" style={{ width: `${(p.score / maxScore) * 100}%` }} />

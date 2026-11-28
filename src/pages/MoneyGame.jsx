@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 const DURATION = 30
-const NOTE_VALUES = [1, 1, 1, 1, 1, 5, 5, 5, 10, 10, 20, 50]
-
 const NOTE_STYLES = {
   1: { bg: 'linear-gradient(135deg,#7ED957,#3FA34D)', color: '#0B3D1C' },
   5: { bg: 'linear-gradient(135deg,#C9A6FF,#8E5CF7)', color: '#2B1259' },
   10: { bg: 'linear-gradient(135deg,#8FD3FF,#3B82F6)', color: '#0B2A5B' },
   20: { bg: 'linear-gradient(135deg,#FFD79A,#D97706)', color: '#4A2503' },
-  50: { bg: 'linear-gradient(135deg,#9BE7C4,#0E9F6E)', color: '#063D2A' }
+  50: { bg: 'linear-gradient(135deg,#9BE7C4,#0E9F6E)', color: '#063D2A' },
+  100: { bg: 'linear-gradient(135deg,#FFF3B0,#FFB703)', color: '#5A3200' }
 }
 
 function formatMoney(n) {
@@ -25,16 +24,80 @@ export default function MoneyGame() {
   const [remaining, setRemaining] = useState(DURATION)
   const [bills, setBills] = useState([])
   const [floats, setFloats] = useState([])
+  const [milestone, setMilestone] = useState(null)
+  const [muted, setMuted] = useState(() => localStorage.getItem('mg_muted') === '1')
   const [best, setBest] = useState(() => Number(localStorage.getItem('mg_best') || 0))
 
   const idRef = useRef(1)
-  const endAtRef = useRef(0)
+  const startAtRef = useRef(0)
   const scoreRef = useRef(0)
   const comboRef = useRef(0)
   const maxComboRef = useRef(0)
   const lastTapRef = useRef(0)
+  const audioRef = useRef(null)
+  const spawnTimerRef = useRef(null)
+  const milestoneTimerRef = useRef(null)
+
+  // ===== 音效 =====
+  const ensureAudio = () => {
+    try {
+      if (!audioRef.current) {
+        const Ctx = window.AudioContext || window.webkitAudioContext
+        if (!Ctx) return null
+        audioRef.current = new Ctx()
+      }
+      if (audioRef.current.state === 'suspended') audioRef.current.resume()
+      return audioRef.current
+    } catch {
+      return null
+    }
+  }
+
+  const tone = (freq, duration = 0.07, type = 'sine', volume = 0.06, delay = 0) => {
+    if (muted) return
+    const ctx = ensureAudio()
+    if (!ctx) return
+    try {
+      const t0 = ctx.currentTime + delay
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = type
+      osc.frequency.setValueAtTime(freq, t0)
+      gain.gain.setValueAtTime(0.0001, t0)
+      gain.gain.exponentialRampToValueAtTime(volume, t0 + 0.012)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(t0)
+      osc.stop(t0 + duration + 0.03)
+    } catch {
+      // 忽略音频异常
+    }
+  }
+
+  const speak = (text) => {
+    if (muted) return
+    if (!('speechSynthesis' in window)) return
+    try {
+      window.speechSynthesis.cancel()
+      const u = new SpeechSynthesisUtterance(text)
+      u.lang = 'zh-CN'
+      u.rate = 1.02
+      u.pitch = 1.18
+      u.volume = 0.95
+      window.speechSynthesis.speak(u)
+    } catch {
+      // 忽略语音异常
+    }
+  }
+
+  useEffect(() => {
+    localStorage.setItem('mg_muted', muted ? '1' : '0')
+  }, [muted])
 
   const startGame = () => {
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
+    ensureAudio()
     scoreRef.current = 0
     comboRef.current = 0
     maxComboRef.current = 0
@@ -45,6 +108,7 @@ export default function MoneyGame() {
     setRemaining(DURATION)
     setBills([])
     setFloats([])
+    setMilestone(null)
     setCountdown(3)
     setPhase('countdown')
   }
@@ -56,15 +120,19 @@ export default function MoneyGame() {
       setPhase('playing')
       return
     }
+    tone(countdown === 1 ? 760 : 540, 0.1, 'square', 0.05)
     const t = setTimeout(() => setCountdown((c) => c - 1), 800)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, countdown])
 
   // 计时
   useEffect(() => {
     if (phase !== 'playing') return
+    startAtRef.current = Date.now()
     const end = Date.now() + DURATION * 1000
-    endAtRef.current = end
+    tone(1040, 0.2, 'sine', 0.08)
+    tone(1320, 0.2, 'sine', 0.05, 0.09)
     const t = setInterval(() => {
       const left = Math.max(0, Math.ceil((end - Date.now()) / 1000))
       setRemaining(left)
@@ -74,44 +142,107 @@ export default function MoneyGame() {
       }
     }, 100)
     return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
-  // 钞票生成
+  // 连击衰减：0.85 秒没有点击就断开
   useEffect(() => {
     if (phase !== 'playing') return
     const t = setInterval(() => {
-      if (Math.random() < 0.18) return
+      if (comboRef.current > 0 && Date.now() - lastTapRef.current > 850) {
+        comboRef.current = 0
+        setCombo(0)
+      }
+    }, 100)
+    return () => clearInterval(t)
+  }, [phase])
+
+  // 钞票生成：普通节奏 + 三波钞票雨 + 最后 5 秒加速
+  useEffect(() => {
+    if (phase !== 'playing') return
+    let cancelled = false
+
+    const spawn = () => {
+      if (cancelled) return
+      const elapsed = (Date.now() - startAtRef.current) / 1000
+      const rush =
+        (elapsed >= 6 && elapsed < 8.5) ||
+        (elapsed >= 13 && elapsed < 16) ||
+        (elapsed >= 21 && elapsed < 24) ||
+        elapsed >= 25
+
       setBills((prev) => {
-        if (prev.length >= 12) return prev
+        if (prev.length >= (rush ? 16 : 11)) return prev
+        const roll = Math.random()
+        let value
+        if (rush) {
+          value =
+            roll < 0.05 ? 100 :
+            roll < 0.16 ? 50 :
+            roll < 0.38 ? 20 :
+            roll < 0.64 ? 10 :
+            roll < 0.85 ? 5 : 1
+        } else {
+          value =
+            roll < 0.015 ? 100 :
+            roll < 0.07 ? 50 :
+            roll < 0.2 ? 20 :
+            roll < 0.44 ? 10 :
+            roll < 0.7 ? 5 : 1
+        }
+        const duration =
+          value === 100 ? 1.7 :
+          value === 50 ? 2.1 :
+          value === 20 ? 2.4 :
+          value === 10 ? 2.8 : 3.1
         return [
           ...prev,
           {
             id: idRef.current++,
-            left: 4 + Math.random() * 80,
-            value: NOTE_VALUES[Math.floor(Math.random() * NOTE_VALUES.length)],
-            duration: 2.1 + Math.random() * 1.3
+            left: 2 + Math.random() * 82,
+            value,
+            duration: duration + Math.random() * 0.5,
+            drift: (Math.random() - 0.5) * 180
           }
         ]
       })
-    }, 300)
-    return () => clearInterval(t)
+
+      const delay = rush ? 115 + Math.random() * 90 : 275 + Math.random() * 190
+      spawnTimerRef.current = setTimeout(spawn, delay)
+    }
+
+    spawn()
+    return () => {
+      cancelled = true
+      clearTimeout(spawnTimerRef.current)
+    }
   }, [phase])
 
-  // 结束保存最好成绩
+  // 结束音效与成绩
   useEffect(() => {
     if (phase !== 'ended') return
+    ;[880, 740, 620].forEach((f, i) => tone(f, 0.2, 'sine', 0.07, i * 0.15))
     if (scoreRef.current > best) {
       setBest(scoreRef.current)
       localStorage.setItem('mg_best', String(scoreRef.current))
     }
-  }, [phase, best])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(spawnTimerRef.current)
+      clearTimeout(milestoneTimerRef.current)
+      if (window.speechSynthesis) window.speechSynthesis.cancel()
+    }
+  }, [])
 
   const collect = (bill) => {
     if (phase !== 'playing') return
     setBills((prev) => prev.filter((b) => b.id !== bill.id))
 
     const now = Date.now()
-    const nextCombo = now - lastTapRef.current < 480 ? comboRef.current + 1 : 1
+    const nextCombo = now - lastTapRef.current < 850 ? comboRef.current + 1 : 1
     lastTapRef.current = now
     comboRef.current = nextCombo
     if (nextCombo > maxComboRef.current) {
@@ -125,7 +256,21 @@ export default function MoneyGame() {
     scoreRef.current += gain
     setScore(scoreRef.current)
 
-    if (navigator.vibrate) navigator.vibrate(8)
+    if (!muted) {
+      const pitch = 660 + Math.min(nextCombo, 30) * 22
+      tone(pitch, 0.055, 'triangle', bill.value >= 50 ? 0.075 : 0.05)
+    }
+    if (navigator.vibrate) navigator.vibrate(bill.value >= 50 ? 18 : 8)
+
+    if (nextCombo === 10) {
+      ;[660, 880, 1100].forEach((f, i) => tone(f, 0.14, 'sine', 0.08, i * 0.08))
+      speak('优秀')
+      showMilestone('优秀！', '#FFD166')
+    } else if (nextCombo === 15) {
+      ;[660, 880, 1100, 1320].forEach((f, i) => tone(f, 0.15, 'sine', 0.09, i * 0.075))
+      speak('不可思议')
+      showMilestone('不可思议！', '#FF6B9D')
+    }
 
     const id = idRef.current++
     setFloats((prev) => [
@@ -133,6 +278,12 @@ export default function MoneyGame() {
       { id, left: bill.left, text: `+${gain}${multiplier > 1 ? ` ×${multiplier}` : ''}` }
     ])
     setTimeout(() => setFloats((prev) => prev.filter((f) => f.id !== id)), 650)
+  }
+
+  const showMilestone = (text, color) => {
+    clearTimeout(milestoneTimerRef.current)
+    setMilestone({ text, color })
+    milestoneTimerRef.current = setTimeout(() => setMilestone(null), 1200)
   }
 
   const multiplier = combo >= 20 ? 2 : combo >= 10 ? 1.5 : 1
@@ -152,7 +303,7 @@ export default function MoneyGame() {
         }
         @keyframes mg-fall {
           from { transform: translate3d(0, -120px, 0) rotate(-10deg); }
-          to { transform: translate3d(0, 108vh, 0) rotate(10deg); }
+          to { transform: translate3d(var(--drift, 0px), 108vh, 0) rotate(10deg); }
         }
         @keyframes mg-float {
           0% { opacity: 0; transform: translate(-50%, 0) scale(.8); }
@@ -167,6 +318,16 @@ export default function MoneyGame() {
         @keyframes mg-pulse {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.05); }
+        }
+        @keyframes mg-milestone {
+          0% { opacity: 0; transform: translate(-50%, 10px) scale(.6); }
+          25% { opacity: 1; transform: translate(-50%, 0) scale(1.12); }
+          70% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -24px) scale(.95); }
+        }
+        @keyframes mg-combo-countdown {
+          from { width: 100%; }
+          to { width: 0%; }
         }
         .mg-note {
           position: absolute;
@@ -184,6 +345,34 @@ export default function MoneyGame() {
         }
         .mg-note:active { filter: brightness(1.15); }
       `}</style>
+
+      <button
+        onClick={() => {
+          const next = !muted
+          setMuted(next)
+          if (!next) {
+            ensureAudio()
+            setTimeout(() => tone(880, 0.08, 'sine', 0.05), 30)
+          }
+        }}
+        aria-label={muted ? '开启音效' : '关闭音效'}
+        style={{
+          position: 'fixed',
+          top: 14,
+          right: 14,
+          zIndex: 20,
+          width: 38,
+          height: 38,
+          borderRadius: 19,
+          border: '1px solid rgba(255,255,255,.18)',
+          background: 'rgba(0,0,0,.28)',
+          color: '#fff',
+          fontSize: 16,
+          cursor: 'pointer'
+        }}
+      >
+        {muted ? '🔇' : '🔊'}
+      </button>
 
       {phase === 'playing' && (
         <>
@@ -216,22 +405,72 @@ export default function MoneyGame() {
 
           {combo >= 3 && (
             <div
+              key={combo}
               style={{
                 position: 'absolute',
                 top: 78,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                padding: '4px 14px',
+                padding: '4px 14px 6px',
                 borderRadius: 999,
                 background: 'rgba(255,209,102,.18)',
                 border: '1px solid rgba(255,209,102,.5)',
                 color: '#FFD166',
                 fontWeight: 800,
                 fontSize: 14,
-                animation: 'mg-pulse .6s infinite'
+                overflow: 'hidden'
               }}
             >
               连击 x{combo}{multiplier > 1 ? ` · ${multiplier}倍` : ''}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  bottom: 0,
+                  height: 2,
+                  background: '#FFD166',
+                  animation: 'mg-combo-countdown .85s linear forwards'
+                }}
+              />
+            </div>
+          )}
+
+          {remaining <= 5 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 122,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                color: '#FF6B6B',
+                fontWeight: 800,
+                fontSize: 13,
+                letterSpacing: 2,
+                animation: 'mg-pulse .8s infinite'
+              }}
+            >
+              最后冲刺 · 钞票雨
+            </div>
+          )}
+
+          {milestone && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '30%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                fontSize: 44,
+                fontWeight: 900,
+                color: milestone.color,
+                textShadow: `0 0 30px ${milestone.color}`,
+                animation: 'mg-milestone 1.2s ease-out forwards',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+                zIndex: 6
+              }}
+            >
+              {milestone.text}
             </div>
           )}
 
@@ -246,7 +485,10 @@ export default function MoneyGame() {
                   top: 0,
                   background: style.bg,
                   color: style.color,
-                  animation: `mg-fall ${bill.duration}s linear forwards`
+                  animation: `mg-fall ${bill.duration}s linear forwards`,
+                  '--drift': `${bill.drift}px`,
+                  width: bill.value === 100 ? 88 : 78,
+                  height: bill.value === 100 ? 50 : 46
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault()
@@ -254,8 +496,10 @@ export default function MoneyGame() {
                 }}
                 onAnimationEnd={() => setBills((prev) => prev.filter((b) => b.id !== bill.id))}
               >
-                <div style={{ fontSize: 19, lineHeight: 1 }}>¥{bill.value}</div>
-                <div style={{ fontSize: 8, opacity: 0.65, letterSpacing: 1 }}>尾牙钞</div>
+                <div style={{ fontSize: bill.value === 100 ? 21 : 19, lineHeight: 1 }}>¥{bill.value}</div>
+                <div style={{ fontSize: 8, opacity: 0.65, letterSpacing: 1 }}>
+                  {bill.value === 100 ? '金砖' : '尾牙钞'}
+                </div>
               </div>
             )
           })}
@@ -308,7 +552,8 @@ export default function MoneyGame() {
           </h1>
           <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>
             {DURATION} 秒内狂点掉落的钞票，面额越大得分越高。<br />
-            连续点击会触发连击倍率，最高 2 倍。
+            中间会有三波钞票雨，最后 5 秒全面加速。<br />
+            连续点击触发连击，10 连击和 15 连击有额外奖励音效。
           </p>
 
           {best > 0 && (
