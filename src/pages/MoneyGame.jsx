@@ -512,45 +512,6 @@ export default function MoneyGame() {
             </div>
           </div>
 
-          <div
-            style={{
-              height: 38,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginTop: 2
-            }}
-          >
-            {combo >= 3 && (
-              <div
-                key={combo}
-                style={{
-                  position: 'relative',
-                  padding: '4px 14px 6px',
-                  borderRadius: 999,
-                  background: 'rgba(255,209,102,.18)',
-                  border: '1px solid rgba(255,209,102,.5)',
-                  color: '#FFD166',
-                  fontWeight: 800,
-                  fontSize: 14,
-                  overflow: 'hidden'
-                }}
-              >
-                连击 x{combo}{multiplier > 1 ? ` · ${multiplier}倍` : ''}
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    bottom: 0,
-                    height: 2,
-                    background: '#FFD166',
-                    animation: 'mg-combo-countdown .85s linear forwards'
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
           <div style={{ height: 4, margin: '0 16px', background: 'rgba(255,255,255,.15)', borderRadius: 2 }}>
             <div
               style={{
@@ -562,6 +523,39 @@ export default function MoneyGame() {
               }}
             />
           </div>
+
+          {combo >= 3 && (
+            <div
+              key={combo}
+              style={{
+                position: 'absolute',
+                top: 4,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                padding: '3px 12px 5px',
+                borderRadius: 999,
+                background: 'rgba(255,209,102,.18)',
+                border: '1px solid rgba(255,209,102,.5)',
+                color: '#FFD166',
+                fontWeight: 800,
+                fontSize: 12.5,
+                overflow: 'hidden',
+                zIndex: 6
+              }}
+            >
+              连击 x{combo}{multiplier > 1 ? ` · ${multiplier}倍` : ''}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  bottom: 0,
+                  height: 2,
+                  background: '#FFD166',
+                  animation: 'mg-combo-countdown .85s linear forwards'
+                }}
+              />
+            </div>
+          )}
 
           {remaining <= 5 && (
             <div
