@@ -13,6 +13,8 @@ import MyBids from './pages/MyBids'
 import Winners from './pages/Winners'
 import Announcement from './pages/Announcement'
 import Admin from './pages/Admin'
+import MoneyGame from './pages/MoneyGame'
+import StageDemo from './pages/StageDemo'
 
 // 路由守卫：未登录跳转到登录页
 function ProtectedRoute({ children }) {
@@ -56,6 +58,8 @@ export default function App() {
       <Route path="/winners" element={<ProtectedRoute><Winners /></ProtectedRoute>} />
       <Route path="/announcement" element={<ProtectedRoute><Announcement /></ProtectedRoute>} />
       <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+      <Route path="/money-demo" element={<MoneyGame />} />
+      <Route path="/stage-demo" element={<StageDemo />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   )

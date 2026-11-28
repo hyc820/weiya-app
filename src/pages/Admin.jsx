@@ -743,6 +743,49 @@ export default function Admin() {
             🔄 刷新排行榜排名
           </button>
           <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+            <h4 style={{ fontSize: 15, marginBottom: 8 }}>🎮 热场游戏原型</h4>
+            <p style={{ fontSize: 12, color: '#999', lineHeight: 1.6, marginBottom: 10 }}>
+              仅用于预览数钱游戏的玩法和大屏效果，使用模拟数据，不计积分。
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <a
+                href="/money-demo"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  background: '#FF6B35',
+                  color: 'white',
+                  borderRadius: 8,
+                  textAlign: 'center',
+                  fontSize: 13,
+                  textDecoration: 'none'
+                }}
+              >
+                员工端预览
+              </a>
+              <a
+                href="/stage-demo"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  flex: 1,
+                  padding: 10,
+                  background: '#f0f0f0',
+                  color: '#333',
+                  borderRadius: 8,
+                  textAlign: 'center',
+                  fontSize: 13,
+                  textDecoration: 'none'
+                }}
+              >
+                大屏预览
+              </a>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
             <h4 style={{ fontSize: 15, marginBottom: 8 }}>📥 导入员工名单</h4>
             <p style={{ fontSize: 12, color: '#999', lineHeight: 1.6, marginBottom: 8 }}>
               每行一人，格式：工号,姓名,部门,角色。
