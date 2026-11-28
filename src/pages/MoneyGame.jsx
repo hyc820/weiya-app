@@ -80,6 +80,35 @@ export default function MoneyGame() {
     }
   }
 
+  const noiseBurst = (duration = 0.25, volume = 0.04, delay = 0, cutoff = 3200) => {
+    if (muted) return
+    const ctx = ensureAudio()
+    if (!ctx) return
+    try {
+      const length = Math.floor(ctx.sampleRate * duration)
+      const buffer = ctx.createBuffer(1, length, ctx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / length)
+      }
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'highpass'
+      filter.frequency.value = cutoff
+      const gain = ctx.createGain()
+      const t0 = ctx.currentTime + delay
+      gain.gain.setValueAtTime(volume, t0)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration)
+      source.connect(filter)
+      filter.connect(gain)
+      gain.connect(ctx.destination)
+      source.start(t0)
+    } catch {
+      // 忽略噪声异常
+    }
+  }
+
   const speak = (text) => {
     if (muted) return
     if (!('speechSynthesis' in window)) return
@@ -103,9 +132,36 @@ export default function MoneyGame() {
     unbelievableAudioRef.current = new Audio(`${base}sounds/unbelievable.m4a`)
     ;[perfectAudioRef.current, unbelievableAudioRef.current].forEach((a) => {
       a.preload = 'auto'
-      a.volume = 1
+      a.volume = 0.62
     })
   }, [])
+
+  const playPerfectStinger = () => {
+    tone(880, 0.09, 'sine', 0.1, 0, 1760)
+    noiseBurst(0.28, 0.045, 0, 3600)
+    ;[1046, 1319, 1568].forEach((f, i) => tone(f, 0.18, 'triangle', 0.095, i * 0.07))
+    tone(2093, 0.16, 'sine', 0.07, 0.22)
+    tone(2637, 0.13, 'sine', 0.045, 0.28)
+    for (let i = 0; i < 6; i++) {
+      tone(1900 + Math.random() * 1700, 0.09, 'sine', 0.025, 0.18 + i * 0.045)
+    }
+  }
+
+  const playUnbelievableStinger = () => {
+    tone(150, 0.3, 'sine', 0.15, 0, 52)
+    noiseBurst(0.5, 0.055, 0, 2600)
+    ;[523, 587, 659, 784, 880, 1046, 1319, 1568, 2093].forEach((f, i) =>
+      tone(f, 0.12, 'triangle', 0.07, 0.03 + i * 0.045)
+    )
+    ;[1046, 1319, 1568, 2093].forEach((f) => {
+      tone(f, 0.55, 'sine', 0.07, 0.46)
+      tone(f, 0.55, 'triangle', 0.025, 0.46)
+    })
+    for (let i = 0; i < 10; i++) {
+      tone(2000 + Math.random() * 2000, 0.12, 'sine', 0.022, 0.5 + i * 0.045)
+    }
+    noiseBurst(0.9, 0.03, 0.46, 5200)
+  }
 
   const playVoice = (kind) => {
     if (muted) return
@@ -316,13 +372,11 @@ export default function MoneyGame() {
     if (navigator.vibrate) navigator.vibrate(bill.value >= 50 ? 18 : 8)
 
     if (nextCombo === 15) {
-      ;[784, 988, 1319].forEach((f, i) => tone(f, 0.17, 'sine', 0.09, i * 0.07))
-      tone(2093, 0.12, 'triangle', 0.035, 0.22)
+      playPerfectStinger()
       playVoice('perfect')
       showMilestone('Perfect!', '#FFD166')
     } else if (nextCombo === 30) {
-      ;[784, 988, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.16, 'sine', 0.09, i * 0.065))
-      tone(2637, 0.14, 'triangle', 0.03, 0.34)
+      playUnbelievableStinger()
       playVoice('unbelievable')
       showMilestone('Unbelievable!', '#FF6B9D')
     }
