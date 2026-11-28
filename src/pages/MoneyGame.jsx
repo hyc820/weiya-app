@@ -302,7 +302,7 @@ export default function MoneyGame() {
     }
     setCombo(nextCombo)
 
-    const multiplier = nextCombo >= 20 ? 2 : nextCombo >= 10 ? 1.5 : 1
+    const multiplier = nextCombo >= 30 ? 2 : nextCombo >= 15 ? 1.5 : 1
     const gain = Math.round(bill.value * multiplier)
     scoreRef.current += gain
     setScore(scoreRef.current)
@@ -341,7 +341,7 @@ export default function MoneyGame() {
     milestoneTimerRef.current = setTimeout(() => setMilestone(null), 1200)
   }
 
-  const multiplier = combo >= 20 ? 2 : combo >= 10 ? 1.5 : 1
+  const multiplier = combo >= 30 ? 2 : combo >= 15 ? 1.5 : 1
 
   return (
     <div className="mg-root">
@@ -608,7 +608,7 @@ export default function MoneyGame() {
           <p style={{ color: 'rgba(255,255,255,.7)', fontSize: 14, lineHeight: 1.8, marginBottom: 24 }}>
             {DURATION} 秒内狂点掉落的钞票，面额越大得分越高。<br />
             中间会有三波钞票雨，最后 5 秒全面加速。<br />
-            连续点击触发连击，15 连击触发 Perfect，30 连击触发 Unbelievable，都有专属音效。
+            连续点击触发连击，15 连击开启 1.5 倍并提示 Perfect，30 连击开启 2 倍并提示 Unbelievable。
           </p>
 
           {best > 0 && (
